@@ -1,0 +1,14 @@
+{
+  "name": "Mapped Cover",
+  "content_in_root": false,
+  "domains": ["cover"],
+  "country": "",
+  "homeassistant": ">=2023.0.0",
+  "render_readme": true,
+  "zip_release": false,
+  "filename": "mappedcover",
+  "persistent_directory": null,
+  "iot_class": "local_push",
+  "version": "0.1.0",
+  "description": "Virtual cover entity with remapped min/max positions and tilt, for Home Assistant."
+}

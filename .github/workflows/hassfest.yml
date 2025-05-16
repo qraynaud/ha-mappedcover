@@ -1,0 +1,25 @@
+name: Hassfest
+
+on:
+  pull_request:
+    paths:
+      - 'custom_components/**'
+      - 'hacs.json'
+      - '.github/workflows/hassfest.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'custom_components/**'
+      - 'hacs.json'
+      - '.github/workflows/hassfest.yml'
+
+jobs:
+  hassfest:
+    name: Hassfest validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Run Hassfest
+        uses: home-assistant/actions/hassfest@master

@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest
+pytest-homeassistant-custom-component>=0.13.244
+pytest-asyncio
