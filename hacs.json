@@ -1,0 +1,6 @@
+{
+  "name": "Mapped Cover",
+  "homeassistant": ">=2025.5",
+  "hide_default_branch": true,
+  "render_readme": true
+}

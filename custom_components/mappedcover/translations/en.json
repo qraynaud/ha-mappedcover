@@ -1,0 +1,28 @@
+{
+  "config": {
+    "abort": {
+      "no_covers_found": "No covers were found in your Home Assistant instance. Please add a cover entity first."
+    },
+    "step": {
+      "user": {
+        "title": "Cover selection",
+        "description": "Please select the cover(s) you want to map.",
+        "data": {
+          "label": "Label",
+          "covers": "Covers"
+        }
+      },
+      "configure": {
+        "title": "Configure cover",
+        "description": "Set the name and position ranges for your mapped cover.",
+        "data": {
+          "min_position": "Minimum position",
+          "max_position": "Maximum position",
+          "min_tilt_position": "Minimum tilt position",
+          "max_tilt_position": "Maximum tilt position",
+          "close_tilt_if_down": "Set tilt position to 0 before target position if it is below the current position"
+        }
+      }
+    }
+  }
+}
