@@ -10,7 +10,7 @@ from homeassistant.helpers.selector import selector
 from homeassistant.config_entries import SOURCE_RECONFIGURE
 import logging
 
-from .const import DOMAIN
+from . import const
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,6 +27,8 @@ def supports_tilt(hass, entity_id):
 def build_remap_schema(tilt_supported, data=None):
   data = data or {}
   schema_dict = {
+    vol.Required("rename_pattern", default=data.get("rename_pattern")): str,
+    vol.Required("rename_replacement", default=data.get("rename_replacement")): str,
     vol.Required("min_position", default=data.get("min_position")): vol.All(int, vol.Range(min=0, max=100)),
     vol.Required("max_position", default=data.get("max_position")): vol.All(int, vol.Range(min=0, max=100)),
   }
@@ -36,7 +38,7 @@ def build_remap_schema(tilt_supported, data=None):
   schema_dict[vol.Optional("close_tilt_if_down", default=data.get("close_tilt_if_down"))] = bool
   return vol.Schema(schema_dict)
 
-class MappedCoverConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class MappedCoverConfigFlow(config_entries.ConfigFlow, domain=const.DOMAIN):
   """Handle a config flow for mappedcover."""
 
   VERSION = 1
@@ -45,13 +47,15 @@ class MappedCoverConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Initialize the config flow."""
     super().__init__()
     self._data = {
-      "label": "Covers",
+      "label": const.DEFAULT_LABEL,
       "covers": [],
-      "min_position": 0,
-      "max_position": 100,
-      "min_tilt_position": 0,
-      "max_tilt_position": 100,
-      "close_tilt_if_down": True,
+      "rename_pattern": const.DEFAULT_RENAME_PATTERN,
+      "rename_replacement": const.DEFAULT_RENAME_REPLACEMENT,
+      "min_position": const.DEFAULT_MIN_POSITION,
+      "max_position": const.DEFAULT_MAX_POSITION,
+      "min_tilt_position": const.DEFAULT_MIN_TILT_POSITION,
+      "max_tilt_position": const.DEFAULT_MAX_TILT_POSITION,
+      "close_tilt_if_down": const.DEFAULT_CLOSE_TILT_IF_DOWN,
     }
 
   async def async_step_user(self, user_input=None):
@@ -68,7 +72,7 @@ class MappedCoverConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
       entity_reg = entity_registry.async_get(self.hass)
       covers = []
       for entity in entity_reg.entities.values():
-        if entity.platform == DOMAIN:
+        if entity.platform == const.DOMAIN:
           covers.append(entity.entity_id)
       _LOGGER.debug("Found covers to exclude: %s", covers)
     except Exception as exc:

@@ -16,6 +16,8 @@
         "title": "Configure cover",
         "description": "Set the name and position ranges for your mapped cover.",
         "data": {
+          "rename_pattern": "Regular expression to match in the cover name to rename it",
+          "rename_replacement": "Replacement string for the matched name",
           "min_position": "Minimum position",
           "max_position": "Maximum position",
           "min_tilt_position": "Minimum tilt position",

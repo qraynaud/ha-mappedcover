@@ -3,8 +3,13 @@ Constants for the mappedcover integration.
 """
 
 DOMAIN = "mappedcover"
-CONF_COVER_ENTITY = "cover_entity"
-CONF_MAX_POSITION = "max_position"
-CONF_MIN_POSITION = "min_position"
-CONF_MAX_TILT_POSITION = "max_tilt_position"
-CONF_MIN_TILT_POSITION = "min_tilt_position"
+
+DEFAULT_LABEL = "Covers"
+
+DEFAULT_RENAME_PATTERN = "^.*$"
+DEFAULT_RENAME_REPLACEMENT = "Mapped \\g<0>"
+DEFAULT_MIN_POSITION = 0
+DEFAULT_MAX_POSITION = 100
+DEFAULT_MIN_TILT_POSITION = 0
+DEFAULT_MAX_TILT_POSITION = 100
+DEFAULT_CLOSE_TILT_IF_DOWN = True

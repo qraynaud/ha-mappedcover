@@ -5,6 +5,7 @@ import logging
 from enum import Enum
 import asyncio
 import time
+import re
 from homeassistant.components.cover import (
   CoverEntity,
   CoverEntityFeature,
@@ -13,7 +14,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers import entity_registry
 from homeassistant.helpers import device_registry
 from homeassistant.core import callback
-from .const import DOMAIN
+from . import const
 from homeassistant.config_entries import ConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
   # Remove outdated entities
   for entity in list(ent_reg.entities.values()):
     if (
-      entity.platform == DOMAIN
+      entity.platform == const.DOMAIN
       and entity.config_entry_id == entry.entry_id
       and entity.entity_id not in [f"cover.{cover}" for cover in covers]
     ):
@@ -107,37 +108,43 @@ class MappedCover(CoverEntity):
     self._target_tilt = None
     self._target_changed_event = asyncio.Event()
     self._last_position_command = 0  # Timestamp of last position command
-    _LOGGER.debug("[MappedCover] created: %s (close tilt: %s)", self._source_entity_id, self._close_tilt_if_down)
-
-  @property
-  def _min_pos(self):
-    return int(self._entry.data.get("min_position", 0))
-  @property
-  def _max_pos(self):
-    return int(self._entry.data.get("max_position", 0))
-  @property
-  def _min_tilt(self):
-    return int(self._entry.data.get("min_tilt_position", 0))
-  @property
-  def _max_tilt(self):
-    return int(self._entry.data.get("max_tilt_position", 0))
-  @property
-  def _close_tilt_if_down(self):
-    return bool(self._entry.data.get("close_tilt_if_down", True))
-
-  @property
-  def name(self):
     ent_reg = entity_registry.async_get(self.hass)
     dev_reg = device_registry.async_get(self.hass)
     cover = ent_reg.async_get(self._source_entity_id)
-    device = dev_reg.async_get(cover.device_id)
-    return f"Mapped {device and device.name or self._source_entity_id}"
+    self._device = dev_reg.async_get(cover.device_id)
+    _LOGGER.debug("[MappedCover] created: %s (close tilt: %s)", self._source_entity_id, self._close_tilt_if_down)
+
+  @property
+  def _rename_pattern(self):
+    return self._entry.data.get("rename_pattern", const.DEFAULT_RENAME_PATTERN)
+  @property
+  def _rename_replacement(self):
+    return self._entry.data.get("rename_replacement", const.DEFAULT_RENAME_REPLACEMENT)
+  @property
+  def _min_pos(self):
+    return int(self._entry.data.get("min_position", const.DEFAULT_MIN_POSITION))
+  @property
+  def _max_pos(self):
+    return int(self._entry.data.get("max_position", const.DEFAULT_MAX_POSITION))
+  @property
+  def _min_tilt(self):
+    return int(self._entry.data.get("min_tilt_position", const.DEFAULT_MIN_TILT_POSITION))
+  @property
+  def _max_tilt(self):
+    return int(self._entry.data.get("max_tilt_position", const.DEFAULT_MAX_TILT_POSITION))
+  @property
+  def _close_tilt_if_down(self):
+    return bool(self._entry.data.get("close_tilt_if_down", const.DEFAULT_CLOSE_TILT_IF_DOWN))
+
+  @property
+  def name(self):
+    return re.sub(self._rename_pattern, self._rename_replacement, self._device and self._device.name or self._source_entity_id, count=1)
 
   @property
   def device_info(self):
     # Provide device info so the entity is grouped under the integration
     return {
-      "identifiers": {(DOMAIN, self.unique_id)},
+      "identifiers": {(const.DOMAIN, self.unique_id)},
       "name": self.name,
       "manufacturer": "Mapped Cover Integration",
       "model": "Virtual Cover",

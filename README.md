@@ -7,6 +7,7 @@
 - Select one or more existing covers during setup (excluding already-mapped covers).
 - Remap the maximum and minimum positions (excluding 0, which always maps to 0; 1–100 maps linearly to your min/max).
 - Remap the maximum and minimum tilt positions if any selected cover supports tilt (same logic as above).
+- Automatically rename mapped covers using regular expressions (`rename_pattern` and `rename_replacement`).
 - Mapped covers are automatically assigned to the same area as their underlying covers.
 - Robust entity and device cleanup when covers are removed or the integration is reconfigured.
 - All configuration and reconfiguration can be done via the Home Assistant UI (Config Flow/Options Flow).
@@ -44,6 +45,27 @@ After setup, new cover entities will appear in Home Assistant. Use these entitie
 ## Remapping Logic
 - **Position**: 0 always maps to 0. 1–100 maps linearly to your configured min/max.
 - **Tilt**: Same as position, if supported by the underlying cover.
+
+## Name Remapping
+
+You can automatically rename your mapped covers using regular expressions:
+
+- **rename_pattern**: A regular expression pattern that matches part or all of the original cover name.
+- **rename_replacement**: The replacement string for the matched pattern.
+  You can use group references (e.g., `\g<1>`) and `\g<0>` for the whole match, following Python’s `re.sub` syntax.
+
+**Example:**
+- If your original cover is named `Living Room Window` and you set:
+  - `rename_pattern`: `^.*$`
+  - `rename_replacement`: `Mapped \g<0>`
+- The mapped cover will be named: `Mapped Living Room Window`
+
+This allows you to create consistent, descriptive names for your mapped covers automatically.
+
+> **Note:**
+> Use `\g<0>` in the replacement string to refer to the entire matched name.
+> Standard Python regular expression syntax applies.
+> Only one replacement will be made if the regular expression matches multiple times
 
 ## Development
 - `__init__.py`: Integration setup and platform forwarding.

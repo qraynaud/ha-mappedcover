@@ -1,11 +1,13 @@
 {
   "domain": "mappedcover",
   "name": "Mapped Cover",
-  "version": "0.1.0",
+  "codeowners": ["@qraynaud"],
+  "config_flow": true,
+  "dependencies": [],
   "documentation": "https://github.com/qraynaud/ha-mappedcover",
+  "integration_type": "hub",
+  "iot_class": "calculated",
   "issue_tracker": "https://github.com/qraynaud/ha-mappedcover/issues",
   "requirements": [],
-  "dependencies": [],
-  "codeowners": ["@qraynaud"],
-  "config_flow": true
+  "version": "0.1.0"
 }
