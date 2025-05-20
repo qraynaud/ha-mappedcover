@@ -9,6 +9,7 @@ import re
 from homeassistant.components.cover import (
   CoverEntity,
   CoverEntityFeature,
+  CoverState,
 )
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers import entity_registry
@@ -115,6 +116,20 @@ class MappedCover(CoverEntity):
     _LOGGER.debug("[MappedCover] created: %s (close tilt: %s)", self._source_entity_id, self._close_tilt_if_down)
 
   @property
+  def _source_current_position(self):
+    src = self.hass.states.get(self._source_entity_id)
+    if src and src.state not in ("unavailable", "unknown"):
+      return src.attributes.get("current_position")
+    return None
+
+  @property
+  def _source_current_tilt_position(self):
+    src = self.hass.states.get(self._source_entity_id)
+    if src and src.state not in ("unavailable", "unknown"):
+      return src.attributes.get("current_tilt_position")
+    return None
+
+  @property
   def _rename_pattern(self):
     return self._entry.data.get("rename_pattern", const.DEFAULT_RENAME_PATTERN)
   @property
@@ -169,7 +184,21 @@ class MappedCover(CoverEntity):
 
   @property
   def is_closed(self):
-    return self.current_cover_position == 0
+    return self.current_cover_position == 0 and self.current_cover_tilt_position == 0
+
+  @property
+  def is_closing(self):
+    pos = self._source_current_position
+    if self._target_position is not None and self._source_current_position is not None:
+      return self._target_position < pos
+    return super().is_closing
+
+  @property
+  def is_opening(self):
+    pos = self._source_current_position
+    if self._target_position is not None and self._source_current_position is not None:
+      return self._target_position > pos
+    return super().is_opening
 
   @property
   def current_cover_position(self):
@@ -179,15 +208,13 @@ class MappedCover(CoverEntity):
         min_value=self._min_pos, max_value=self._max_pos,
         direction=RemapDirection.FROM_SOURCE
       )
-    src = self.hass.states.get(self._source_entity_id)
-    if src and src.state not in ("unavailable", "unknown"):
-      pos = src.attributes.get("current_position")
-      if pos is not None:
-        return remap_value(
-          pos,
-          min_value=self._min_pos, max_value=self._max_pos,
-          direction=RemapDirection.FROM_SOURCE
-        )
+    pos = self._source_current_position
+    if pos is not None:
+      return remap_value(
+        pos,
+        min_value=self._min_pos, max_value=self._max_pos,
+        direction=RemapDirection.FROM_SOURCE
+      )
     return None
 
   @property
@@ -195,8 +222,7 @@ class MappedCover(CoverEntity):
     tilt = self._target_tilt
 
     if tilt is None:
-      src = self.hass.states.get(self._source_entity_id)
-      tilt = src.attributes.get("current_tilt_position")
+      tilt = self._source_current_tilt_position
 
     if tilt is not None:
       tilt = remap_value(
@@ -210,27 +236,7 @@ class MappedCover(CoverEntity):
   @property
   def available(self):
     src = self.hass.states.get(self._source_entity_id)
-    return src is not None and src.state != "unavailable"
-
-  @property
-  def state(self):
-    src = self.hass.states.get(self._source_entity_id)
-    # If underlying state is 'closed' but tilt is not 0, return 'open'
-    if src and src.state == "closed":
-      tilt = src.attributes.get("current_tilt_position")
-      if tilt is not None and (tilt != 0 or self._target_tilt is not None):
-        return "open"
-      return "closed"
-    if self._target_position is not None and src and src.state not in ("unavailable", "unknown"):
-      pos = src.attributes.get("current_position")
-      if pos is not None:
-        if self._target_position > pos:
-          return "opening"
-        elif self._target_position < pos:
-          return "closing"
-    if src:
-      return src.state
-    return None
+    return src is not None and src.state not in ("unavailable", "unknown")
 
   @property
   def device_class(self):
@@ -246,7 +252,7 @@ class MappedCover(CoverEntity):
     recently_moving = (time.time() - self._last_position_command) < 5
     src = self.hass.states.get(self._source_entity_id)
     state = src.state if src else None
-    return recently_moving or (state in ("opening", "closing"))
+    return recently_moving or (state in (CoverState.OPENING, CoverState.CLOSING))
 
   async def _wait_for_attribute(self, attr, src_target, timeout=30, compare=lambda val, target: abs(val - target) <= 1):
     """Wait until the underlying cover's attribute matches the src_target (source scale), or until the target changes. Returns True if reached, False if timeout or interrupted."""
@@ -337,7 +343,7 @@ class MappedCover(CoverEntity):
     position = self._target_position
     tilt = self._target_tilt
     src = self.hass.states.get(self._source_entity_id)
-    current_pos = src.attributes.get("current_position") if src else None
+    current_pos = self._source_current_position
 
     # Set tilt first if both are set and (target position != current) and the cover is not recently moving
     if tilt is not None and position is not None and (current_pos is None or position != current_pos) and not self.is_moving:
@@ -355,7 +361,7 @@ class MappedCover(CoverEntity):
         return
 
     src = self.hass.states.get(self._source_entity_id)
-    current_pos = src.attributes.get("current_position") if src else None
+    current_pos = self._source_current_position
 
     # If the cover is moving and the target position is equal to the current position,
     # stop the cover and look for its current position again
@@ -366,7 +372,7 @@ class MappedCover(CoverEntity):
       )
       await self._wait_for_attribute("current_position", current_pos, timeout=5, compare=lambda val, target: abs(val - target) > 1)
       src = self.hass.states.get(self._source_entity_id)
-      current_pos = src.attributes.get("current_position") if src else None
+      current_pos = self._source_current_position
 
     # Set position if needed
     if position is not None and current_pos != position:
@@ -390,7 +396,7 @@ class MappedCover(CoverEntity):
     # Set tilt if needed
     if tilt is not None:
       src = self.hass.states.get(self._source_entity_id)
-      current_tilt = src.attributes.get("current_tilt_position") if src else None
+      current_tilt = self._source_current_tilt_position
 
       # Set tilt to 0 before setting the target tilt if close_tilt_if_down is enabled and
       # target position is below current position
@@ -435,13 +441,13 @@ class MappedCover(CoverEntity):
     if self._target_position == new_target:
       return
     src = self.hass.states.get(self._source_entity_id)
-    current_pos = src.attributes.get("current_position") if src else None
+    current_pos = self._source_current_position
     if self._target_position is None and current_pos == new_target:
       return
     self._target_position = new_target
     # Set current tilt as target tilt if target tilt is None
     if self._target_tilt is None:
-      current_tilt = src.attributes.get("current_tilt_position") if src else None
+      current_tilt = self._source_current_tilt_position
       if current_tilt is not None:
         self._target_tilt = current_tilt
     self.hass.async_create_task(self.converge_position())
@@ -455,7 +461,7 @@ class MappedCover(CoverEntity):
     if self._target_tilt == new_target:
       return
     src = self.hass.states.get(self._source_entity_id)
-    current_tilt = src.attributes.get("current_tilt_position") if src else None
+    current_tilt = self._source_current_tilt_position
     if self._target_tilt is None and current_tilt == new_target:
       return
     self._target_tilt = new_target
