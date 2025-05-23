@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2025-05-23
+### Changed
+- Comprehensive and consistent logging improvements throughout `cover.py`:
+  - All log messages now use the format `[<entity_id>] xxx` for clarity.
+  - Improved logging for async methods, state transitions, and aborts/interruption of actions.
+- Internal refactoring to mitigate issues when handling lots of covers simultaneously.
+
 ## [0.2.1] - 2025-05-23
 ### Changed
 - The `is_closed` property now returns True only if the mapped position is 0 and the mapped tilt is 0 or not present (`None`). This makes the closed state stricter and more accurate for covers with tilt.
