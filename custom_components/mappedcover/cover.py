@@ -184,7 +184,7 @@ class MappedCover(CoverEntity):
 
   @property
   def is_closed(self):
-    return self.current_cover_position == 0 and self.current_cover_tilt_position == 0
+    return self.current_cover_position == 0 and self.current_cover_tilt_position in (0, None)
 
   @property
   def is_closing(self):
