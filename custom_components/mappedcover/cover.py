@@ -17,12 +17,15 @@ from homeassistant.helpers import device_registry
 from homeassistant.core import callback
 from . import const
 from homeassistant.config_entries import ConfigEntry
+from asyncio_throttle import Throttler
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities):
   """Set up the mapped cover from a config entry."""
   covers = entry.data.get("covers", [])
+  throttle = entry.data.get("throttle", const.DEFAULT_THROTTLE)
+  throttler = Throttler(1, throttle / 1000)
   ent_reg = entity_registry.async_get(hass)
   dev_reg = device_registry.async_get(hass)
 
@@ -38,7 +41,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
   mapped_entities = []
   for cover in covers:
-    mapped_entities.append(MappedCover(hass, entry, cover))
+    mapped_entities.append(MappedCover(hass, entry, cover, throttler))
   async_add_entities(mapped_entities)
 
   # After entities are added, set their area_id only if not already set
@@ -101,8 +104,9 @@ def remap_value(value, min_value, max_value, direction=RemapDirection.TO_SOURCE)
     return max(0, min(result, 100))
 
 class MappedCover(CoverEntity):
-  def __init__(self, hass, entry: ConfigEntry, cover):
+  def __init__(self, hass, entry: ConfigEntry, cover, throttler: Throttler):
     self.hass = hass
+    self._throttler = throttler
     self._entry = entry
     self._source_entity_id = cover
     self._target_position = None
@@ -300,11 +304,12 @@ class MappedCover(CoverEntity):
       "[%s] Calling set_cover_position: position=%s",
       self._source_entity_id, position
     )
-    await self.hass.services.async_call(
-      "cover", "set_cover_position",
-      {"entity_id": self._source_entity_id, "position": position},
-      blocking=True
-    )
+    async with self._throttler:
+      await self.hass.services.async_call(
+        "cover", "set_cover_position",
+        {"entity_id": self._source_entity_id, "position": position},
+        blocking=True
+      )
     _LOGGER.debug(
       "[%s] Waiting for position to be reached after set_cover_position: position=%s",
       self._source_entity_id, position
@@ -319,11 +324,12 @@ class MappedCover(CoverEntity):
       "[%s] Calling set_cover_tilt_position: tilt_position=%s",
       self._source_entity_id, tilt
     )
-    await self.hass.services.async_call(
-      "cover", "set_cover_tilt_position",
-      {"entity_id": self._source_entity_id, "tilt_position": tilt},
-      blocking=True
-    )
+    async with self._throttler:
+      await self.hass.services.async_call(
+        "cover", "set_cover_tilt_position",
+        {"entity_id": self._source_entity_id, "tilt_position": tilt},
+        blocking=True
+      )
     _LOGGER.debug(
       "[%s] Waiting for tilt to be reached after set_cover_tilt_position",
       self._source_entity_id
@@ -351,11 +357,12 @@ class MappedCover(CoverEntity):
         "[%s] Setting tilt before position: tilt_position=%s (target_position=%s)",
         self._source_entity_id, tilt, position
       )
-      await self.hass.services.async_call(
-        "cover", "set_cover_tilt_position",
-        {"entity_id": self._source_entity_id, "tilt_position": tilt},
-        blocking=True
-      )
+      async with self._throttler:
+        await self.hass.services.async_call(
+          "cover", "set_cover_tilt_position",
+          {"entity_id": self._source_entity_id, "tilt_position": tilt},
+          blocking=True
+        )
       if self._target_position != position or self._target_tilt != tilt:
         _LOGGER.debug("[%s] converge_position: abort (position=%s, tilt=%s)", self._source_entity_id, position, tilt)
         return
@@ -368,9 +375,10 @@ class MappedCover(CoverEntity):
     if self.is_moving and current_pos == position:
       _LOGGER.debug("[%s] Cover is moving but already at target position, stopping", self._source_entity_id)
       await asyncio.sleep(1)
-      await self.hass.services.async_call(
-        "cover", "stop_cover", {"entity_id": self._source_entity_id}, blocking=True
-      )
+      async with self._throttler:
+        await self.hass.services.async_call(
+          "cover", "stop_cover", {"entity_id": self._source_entity_id}, blocking=True
+        )
       await self._wait_for_attribute("current_position", current_pos, timeout=5, compare=lambda val, target: abs(val - target) > 1)
       src = self.hass.states.get(self._source_entity_id)
       current_pos = self._source_current_position
@@ -454,7 +462,7 @@ class MappedCover(CoverEntity):
       current_tilt = self._source_current_tilt_position
       if current_tilt is not None:
         self._target_tilt = current_tilt
-    await self.converge_position()
+    self.hass.async_create_task(self.converge_position())
 
   async def async_set_cover_tilt_position(self, **kwargs):
     tilt = kwargs.get("tilt_position")
@@ -471,7 +479,7 @@ class MappedCover(CoverEntity):
       _LOGGER.debug("[%s] async_set_cover_tilt_position: Already at target tilt %s", self._source_entity_id, new_target)
       return
     self._target_tilt = new_target
-    await self.converge_position()
+    self.hass.async_create_task(self.converge_position())
 
   async def async_open_cover(self, **kwargs):
     features = self.supported_features
@@ -481,7 +489,7 @@ class MappedCover(CoverEntity):
     if features & CoverEntityFeature.SET_TILT_POSITION and self._source_current_tilt_position != self._max_tilt:
       self._target_tilt = self._max_tilt
     if self._target_position is not None or self._target_tilt is not None:
-      await self.converge_position()
+      self.hass.async_create_task(self.converge_position())
 
   async def async_close_cover(self, **kwargs):
     features = self.supported_features
@@ -490,29 +498,30 @@ class MappedCover(CoverEntity):
     if features & CoverEntityFeature.SET_TILT_POSITION and self._source_current_tilt_position != 0:
       self._target_tilt = 0
     if self._target_position is not None or self._target_tilt is not None:
-      await self.converge_position()
+      self.hass.async_create_task(self.converge_position())
 
   async def async_open_cover_tilt(self, **kwargs):
     if self._source_current_tilt_position != self._max_tilt:
       self._target_tilt = self._max_tilt
-      await self.converge_position()
+      self.hass.async_create_task(self.converge_position())
 
   async def async_close_cover_tilt(self, **kwargs):
     if self._source_current_tilt_position != 0:
       self._target_tilt = 0
-      await self.converge_position()
+      self.hass.async_create_task(self.converge_position())
 
   async def async_stop_cover(self, **kwargs):
     _LOGGER.debug(
       "[%s] Calling stop_cover",
       self._source_entity_id
     )
-    await self.hass.services.async_call(
-      "cover", "stop_cover", {"entity_id": self._source_entity_id}, blocking=True
-    )
     self._target_position = None
     self._target_tilt = None
     self._target_changed_event.set()
+    async with self._throttler:
+      await self.hass.services.async_call(
+        "cover", "stop_cover", {"entity_id": self._source_entity_id}, blocking=True
+      )
     self.async_write_ha_state()
 
   async def async_stop_cover_tilt(self, **kwargs):
@@ -520,9 +529,10 @@ class MappedCover(CoverEntity):
       "[%s] Calling stop_cover_tilt",
       self._source_entity_id
     )
-    await self.hass.services.async_call(
-      "cover", "stop_cover_tilt", {"entity_id": self._source_entity_id}, blocking=True
-    )
     self._target_tilt = None
     self._target_changed_event.set()
+    async with self._throttler:
+      await self.hass.services.async_call(
+        "cover", "stop_cover_tilt", {"entity_id": self._source_entity_id}, blocking=True
+      )
     self.async_write_ha_state()

@@ -36,6 +36,7 @@ def build_remap_schema(tilt_supported, data=None):
     schema_dict[vol.Required("min_tilt_position", default=data.get("min_tilt_position"))] = vol.All(int, vol.Range(min=0, max=100))
     schema_dict[vol.Required("max_tilt_position", default=data.get("max_tilt_position"))] = vol.All(int, vol.Range(min=0, max=100))
   schema_dict[vol.Optional("close_tilt_if_down", default=data.get("close_tilt_if_down"))] = bool
+  schema_dict[vol.Optional("throttle", default=data.get("throttle", const.DEFAULT_THROTTLE))] = int
   return vol.Schema(schema_dict)
 
 class MappedCoverConfigFlow(config_entries.ConfigFlow, domain=const.DOMAIN):
@@ -56,6 +57,7 @@ class MappedCoverConfigFlow(config_entries.ConfigFlow, domain=const.DOMAIN):
       "min_tilt_position": const.DEFAULT_MIN_TILT_POSITION,
       "max_tilt_position": const.DEFAULT_MAX_TILT_POSITION,
       "close_tilt_if_down": const.DEFAULT_CLOSE_TILT_IF_DOWN,
+      "throttle": const.DEFAULT_THROTTLE,
     }
 
   async def async_step_user(self, user_input=None):

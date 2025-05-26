@@ -12,6 +12,7 @@
 - Robust entity and device cleanup when covers are removed or the integration is reconfigured.
 - All configuration and reconfiguration can be done via the Home Assistant UI (Config Flow/Options Flow).
 - HACS-compatible structure.
+- Throttle: You can define the minimum interval (in milliseconds) between calls to the underlying covers. This helps prevent rate-limiting or overloading physical devices.
 
 ## Installation
 

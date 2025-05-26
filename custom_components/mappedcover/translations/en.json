@@ -22,7 +22,8 @@
           "max_position": "Maximum position",
           "min_tilt_position": "Minimum tilt position",
           "max_tilt_position": "Maximum tilt position",
-          "close_tilt_if_down": "Set tilt position to 0 before target position if it is below the current position"
+          "close_tilt_if_down": "Set tilt position to 0 before target position if it is below the current position",
+          "throttle": "Min interval between calls to the underlying covers in milliseconds"
         }
       }
     }

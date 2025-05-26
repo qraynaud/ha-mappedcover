@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2025-05-26
+### Added
+- Throttling support for mapped covers: you can now set a minimum interval (in milliseconds) between calls to the underlying covers using the new `throttle` option in the config/options flow.
+- New config option and translation for `throttle` (minimum interval between calls).
+
 ## [0.3.0] - 2025-05-23
 ### Changed
 - Comprehensive and consistent logging improvements throughout `cover.py`:
