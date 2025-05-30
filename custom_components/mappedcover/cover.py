@@ -414,6 +414,8 @@ class MappedCover(CoverEntity):
           retry=3
         )
 
+      reached = False
+
       if position is not None and current_pos != position:
         reached = await self._wait_for_attribute("current_tilt_position", tilt, 5)
 

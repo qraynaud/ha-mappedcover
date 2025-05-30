@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.2] - 2025-05-30
+### Changed
+- Fixed a regression caused by 0.4.1 causing an exception to be raised for some tilt changes
+
 ## [0.4.1] - 2025-05-30
 ### Changed
 - Improved error handling for cover service calls: exceptions are now caught and logged, preventing crashes on service failures.
