@@ -298,43 +298,59 @@ class MappedCover(CoverEntity):
     finally:
       remove()
 
-  async def _set_position_and_wait(self, position, timeout=30):
-    self._last_position_command = time.time()
-    _LOGGER.debug(
-      "[%s] Calling set_cover_position: position=%s",
-      self._source_entity_id, position
-    )
-    async with self._throttler:
-      await self.hass.services.async_call(
-        "cover", "set_cover_position",
-        {"entity_id": self._source_entity_id, "position": position},
-        blocking=True
-      )
-    _LOGGER.debug(
-      "[%s] Waiting for position to be reached after set_cover_position: position=%s",
-      self._source_entity_id, position
-    )
-    reached = await self._wait_for_attribute("current_position", position, timeout=timeout)
-    if reached:
-      self._last_position_command = 0
-    return reached
+  async def _call_service(self, command, data, retry=0, timeout=30):
+    """
+    Asynchronously call a Home Assistant cover service with optional retries and attribute confirmation.
+    Args:
+      command (str): The cover service command to call. Must be one of:
+        "set_cover_position", "set_cover_tilt_position", "stop_cover", or "stop_cover_tilt".
+      data (dict): The service data to send with the command.
+      retry (int, optional): Number of times to retry the command if the target attribute is not reached. Defaults to 0 (no retry).
+      timeout (int, optional): Timeout in seconds to wait for the attribute to reach the target value after calling the service. Defaults to 30.
+    Returns:
+      bool: True if the service call succeeded (and the attribute reached the target value if applicable), False otherwise.
+    Raises:
+      ValueError: If the command is not in the allowed set.
+    """
 
-  async def _set_tilt_position_and_wait(self, tilt, timeout=5):
-    _LOGGER.debug(
-      "[%s] Calling set_cover_tilt_position: tilt_position=%s",
-      self._source_entity_id, tilt
-    )
-    async with self._throttler:
-      await self.hass.services.async_call(
-        "cover", "set_cover_tilt_position",
-        {"entity_id": self._source_entity_id, "tilt_position": tilt},
-        blocking=True
-      )
-    _LOGGER.debug(
-      "[%s] Waiting for tilt to be reached after set_cover_tilt_position",
-      self._source_entity_id
-    )
-    return await self._wait_for_attribute("current_tilt_position", tilt, timeout)
+    allowed_commands = {
+      "set_cover_position",
+      "set_cover_tilt_position",
+      "stop_cover",
+      "stop_cover_tilt",
+    }
+    if command not in allowed_commands:
+      raise ValueError(f"Command {command} not allowed")
+    attempt = 0
+    while True:
+      try:
+        async with self._throttler:
+          await self.hass.services.async_call(
+            "cover", command, data, blocking=True
+          )
+        # For set_cover_position and set_cover_tilt_position, wait for attribute to reach target
+        if retry > 0 and command == "set_cover_position" and "position" in data:
+          reached = await self._wait_for_attribute("current_position", data["position"], timeout=timeout)
+          if reached:
+            return True
+          else:
+            _LOGGER.debug("[%s] _call_service: %s did not reach position %s (attempt %d)", self._source_entity_id, command, data["position"], attempt + 1)
+        elif retry > 0 and command == "set_cover_tilt_position" and "tilt_position" in data:
+          reached = await self._wait_for_attribute("current_tilt_position", data["tilt_position"], timeout=timeout)
+          if reached:
+            return True
+          else:
+            _LOGGER.debug("[%s] _call_service: %s did not reach tilt %s (attempt %d)", self._source_entity_id, command, data["tilt_position"], attempt + 1)
+        else:
+          return True
+      except Exception as e:
+        _LOGGER.warning("[%s] _call_service: Exception on %s: %s (attempt %d)", self._source_entity_id, command, e, attempt + 1)
+      attempt += 1
+      if attempt > retry and retry > 0:
+        _LOGGER.warning("[%s] _call_service: Max retries (%s) reached for %s", self._source_entity_id, retry, command)
+        break
+      await asyncio.sleep(1)
+    return False
 
   async def converge_position(self):
     """
@@ -348,7 +364,6 @@ class MappedCover(CoverEntity):
     self._target_changed_event.set()
     position = self._target_position
     tilt = self._target_tilt
-    src = self.hass.states.get(self._source_entity_id)
     current_pos = self._source_current_position
     _LOGGER.debug("[%s] converge_position: target_position=%s, target_tilt=%s, current_pos=%s", self._source_entity_id, position, tilt, current_pos)
     # Set tilt first if both are set and (target position != current) and the cover is not recently moving
@@ -357,17 +372,14 @@ class MappedCover(CoverEntity):
         "[%s] Setting tilt before position: tilt_position=%s (target_position=%s)",
         self._source_entity_id, tilt, position
       )
-      async with self._throttler:
-        await self.hass.services.async_call(
-          "cover", "set_cover_tilt_position",
-          {"entity_id": self._source_entity_id, "tilt_position": tilt},
-          blocking=True
-        )
+      await self._call_service(
+        "set_cover_tilt_position",
+        {"entity_id": self._source_entity_id, "tilt_position": tilt},
+      )
       if self._target_position != position or self._target_tilt != tilt:
         _LOGGER.debug("[%s] converge_position: abort (position=%s, tilt=%s)", self._source_entity_id, position, tilt)
         return
 
-    src = self.hass.states.get(self._source_entity_id)
     current_pos = self._source_current_position
 
     # If the cover is moving and the target position is equal to the current position,
@@ -375,46 +387,32 @@ class MappedCover(CoverEntity):
     if self.is_moving and current_pos == position:
       _LOGGER.debug("[%s] Cover is moving but already at target position, stopping", self._source_entity_id)
       await asyncio.sleep(1)
-      async with self._throttler:
-        await self.hass.services.async_call(
-          "cover", "stop_cover", {"entity_id": self._source_entity_id}, blocking=True
-        )
+      await self._call_service("stop_cover", {"entity_id": self._source_entity_id})
       await self._wait_for_attribute("current_position", current_pos, timeout=5, compare=lambda val, target: abs(val - target) > 1)
-      src = self.hass.states.get(self._source_entity_id)
       current_pos = self._source_current_position
+      self.async_write_ha_state()
 
     # Set position if needed
     if position is not None and current_pos != position:
-      index = 0
-      while index < 10:
-        index += 1
-        reached = await self._set_position_and_wait(position)
-        if self._target_position != position or self._target_tilt != tilt:
-          _LOGGER.debug("[%s] converge_position: abort (position=%s, tilt=%s)", self._source_entity_id, position, tilt)
-          return
-        if reached:
-          break
-      if index == 10:
-        _LOGGER.debug(
-          "[%s] Failed to reach position after 10 tries: position=%s",
-          self._source_entity_id, position
-        )
-
-    self.async_write_ha_state()
+      await self._call_service(
+        "set_cover_position",
+        {"entity_id": self._source_entity_id, "position": position},
+        retry=3
+      )
+      self.async_write_ha_state()
 
     # Set tilt if needed
     if tilt is not None:
-      src = self.hass.states.get(self._source_entity_id)
       current_tilt = self._source_current_tilt_position
 
       # Set tilt to 0 before setting the target tilt if close_tilt_if_down is enabled and
       # target position is below current position
       if self._close_tilt_if_down and position is None and tilt < current_tilt:
-        while not await self._set_tilt_position_and_wait(0):
-          pass
-
-      reached = False
-      index = 0
+        await self._call_service(
+          "set_cover_tilt_position",
+          {"entity_id": self._source_entity_id, "tilt_position": 0},
+          retry=3
+        )
 
       if position is not None and current_pos != position:
         reached = await self._wait_for_attribute("current_tilt_position", tilt, 5)
@@ -423,17 +421,11 @@ class MappedCover(CoverEntity):
         _LOGGER.debug("[%s] converge_position: abort (position=%s, tilt=%s)", self._source_entity_id, position, tilt)
         return
 
-      while not reached and index < 10:
-        index += 1
-        reached = await self._set_tilt_position_and_wait(tilt)
-        if self._target_position != position or self._target_tilt != tilt:
-          _LOGGER.debug("[%s] converge_position: abort (position=%s, tilt=%s)", self._source_entity_id, position, tilt)
-          return
-
-      if index == 10:
-        _LOGGER.debug(
-          "[%s] Failed to reach tilt after 10 tries: tilt_position=%s",
-          self._source_entity_id, tilt
+      if not reached:
+        await self._call_service(
+          "set_cover_tilt_position",
+          {"entity_id": self._source_entity_id, "tilt_position": tilt},
+          retry=3
         )
 
     self._target_position = None
@@ -518,10 +510,11 @@ class MappedCover(CoverEntity):
     self._target_position = None
     self._target_tilt = None
     self._target_changed_event.set()
-    async with self._throttler:
-      await self.hass.services.async_call(
-        "cover", "stop_cover", {"entity_id": self._source_entity_id}, blocking=True
-      )
+    await self._call_service(
+      "stop_cover",
+      {"entity_id": self._source_entity_id},
+      retry=3
+    )
     self.async_write_ha_state()
 
   async def async_stop_cover_tilt(self, **kwargs):
@@ -531,8 +524,9 @@ class MappedCover(CoverEntity):
     )
     self._target_tilt = None
     self._target_changed_event.set()
-    async with self._throttler:
-      await self.hass.services.async_call(
-        "cover", "stop_cover_tilt", {"entity_id": self._source_entity_id}, blocking=True
-      )
+    await self._call_service(
+      "stop_cover_tilt",
+      {"entity_id": self._source_entity_id},
+      retry=3
+    )
     self.async_write_ha_state()

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2025-05-30
+### Changed
+- Improved error handling for cover service calls: exceptions are now caught and logged, preventing crashes on service failures.
+- Reduced retry count for position/tilt commands to 3 (was 10), making the system more responsive to persistent errors.
+- No functional changes except for error handling and retry logic in mapped cover operations.
+
 ## [0.4.0] - 2025-05-26
 ### Added
 - Throttling support for mapped covers: you can now set a minimum interval (in milliseconds) between calls to the underlying covers using the new `throttle` option in the config/options flow.
