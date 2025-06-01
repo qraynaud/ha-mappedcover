@@ -1,5 +1,7 @@
 # TODO
 
+**Current Status**: Core functionality complete with comprehensive config flow and reconfiguration testing. Integration setup, config flow, and reconfiguration flow tests are complete (27 tests passing). Cover entity logic test plan has been updated to accurately reflect the actual implementation in cover.py. Next step is implementing the detailed cover entity logic tests.
+
 - [x] **Project Setup**
   - [x] Ensure `custom_components/mappedcover/` exists with `__init__.py`, `manifest.json`, `sensor.py`, `const.py`
   - [x] Update `manifest.json` with correct domain, name, and metadata
@@ -28,50 +30,126 @@
   - [x] Sync state with the underlying cover when not moving
 
 - [ ] **Unit Testing**
-  - [ ] **Config Flow**
-    - [ ] Test that the config flow UI displays all required fields (entity selection, ID, name, min/max position, min/max tilt if supported)
-    - [ ] Test that only valid, non-mapped cover entities are selectable
-    - [ ] Test that submitting the config flow creates an entry with the correct data
-    - [ ] Test that min/max values are validated and stored as expected
-    - [ ] Test that tilt options are only shown if the selected entity supports tilt
-  - [ ] **Reconfiguration (Options Flow)**
-    - [ ] Test that the options flow can be started for an existing mapped cover
-    - [ ] Test that changing min/max position/tilt updates the entity's behavior
-    - [ ] Test that changes persist after Home Assistant restart
-    - [ ] Test that the UI reflects current configuration values
+  - [x] **Test Infrastructure**
+    - [x] Set up pytest with Home Assistant testing framework
+    - [x] Configure conftest.py with custom component copying for integration tests
+    - [x] Reorganize test files with meaningful names (test_integration_setup.py, test_config_flow.py)
+  - [x] **Integration Setup**
+    - [x] Test that the integration loads successfully
+    - [x] Test that the domain is correctly registered
+    - [x] Test that the config flow is properly configured
+  - [x] **Config Flow**
+    - [x] Test that the config flow shows user step with label and covers fields
+    - [x] Test that only valid, non-mapped cover entities are selectable (exclude existing mapped covers)
+    - [x] Test that configure step shows remapping fields with conditional tilt support
+    - [x] Test that submitting the two-step config flow creates an entry with the correct data
+    - [x] Test that min/max values are validated (throw exceptions for invalid ranges)
+    - [x] Test that tilt options are only shown if the selected entity supports tilt
+    - [x] **Error Handling & Edge Cases**
+      - [x] Test error handling when entity registry access fails (internal_error abort)
+      - [x] Test edge case: no covers available to select
+      - [x] Test edge case: mixed tilt support (some covers support tilt, others don't)
+    - [x] **Input Validation**
+      - [x] Test validation that at least one cover is selected (vol.Length(min=1))
+      - [x] Test voluptuous range validation edge cases (exactly 0, exactly 100)
+      - [x] Test string field validation (empty label, malformed regex patterns)
+    - [x] **Default Values & Configuration**
+      - [x] Test default values are properly applied from constants
+      - [x] Test optional fields have correct defaults (close_tilt_if_down, throttle)
+    - [x] **Helper Functions**
+      - [x] Test supports_tilt function error handling (missing state, malformed attributes)
+      - [x] Test build_remap_schema with various tilt_supported scenarios
+  - [x] **Reconfiguration Flow**
+    - [x] **Basic Reconfiguration**
+      - [x] Test that the reconfigure flow can be started for an existing mapped cover
+      - [x] Test that reconfigure flow shows existing values and allows modification
+      - [x] Test that reconfigure uses async_update_reload_and_abort to apply changes
+      - [x] Test that changes persist after reconfiguration
+    - [x] **Advanced Reconfiguration**
+      - [x] Test reconfigure step with unique_id handling and mismatch abort
+      - [x] Test reconfigure preserves existing entry data and title
+      - [x] Test reconfigure redirects through user step correctly
+      - [x] Test reconfigure vs new entry code paths in async_step_configure
   - [ ] **Cover Entity Logic**
+    - [x] **Platform Setup & Entity Management**
+      - [x] Test `async_setup_entry` creates mapped entities for all configured covers
+      - [x] Test entity removal and device cleanup when covers are removed from config
+      - [x] Test area assignment from source entity/device to mapped entity
+      - [x] Test `async_unload_entry` properly clean up entities
     - [ ] **Entity Creation & Initialization**
-      - [ ] Test that a mapped cover entity is created with the correct name, unique_id, and device_info
-      - [ ] Test that the entity is available/unavailable based on the underlying cover
-    - [ ] **Remapping Logic**
-      - [ ] Test that user 0 always maps to source 0 for position and tilt
-      - [ ] Test that user 1–100 maps linearly to min..max for position and tilt
-      - [ ] Test that remapping is correct for edge values (min, max, midpoints)
-      - [ ] Test that remapping is correct for custom min/max values
-    - [ ] **Command Forwarding**
-      - [ ] Test that set_cover_position calls the underlying entity with remapped value
-      - [ ] Test that set_cover_tilt_position calls the underlying entity with remapped value
-      - [ ] Test that open/close/stop/tilt commands are forwarded and remapped
-      - [ ] Test that rapid command changes are handled without blocking
-    - [ ] **State Reporting**
-      - [ ] Test that while moving, the entity reports the target position/tilt
-      - [ ] Test that after movement, the entity syncs with the underlying state
-      - [ ] Test that the entity reports unavailable if the underlying entity is unavailable
-      - [ ] Test that the state property returns 'open', 'closed', 'opening', 'closing' as appropriate
-    - [ ] **Underlying cover Quirks**
-      - [ ] Test that if the underlying cover forgets tilt/position, the integration retries as needed
-      - [ ] Test that sequential moves (position then tilt, or vice versa) are handled correctly
-    - [ ] **Concurrency & Responsiveness**
-      - [ ] Test that only one converge_position runs at a time and new targets interrupt the previous run
-      - [ ] Test that the entity remains responsive to rapid user commands
-      - [ ] Test that stop commands immediately interrupt any ongoing move
-    - [ ] **Device Class Reflection**
-      - [ ] Test that the mapped cover's device_class matches the underlying cover's device_class
-      - [ ] Test that changes to the underlying device_class are reflected in the mapped entity
+      - [ ] Test `MappedCover.__init__` correctly initializes with hass, entry, cover, throttler
+      - [ ] Test unique_id generation format: `{entry_id}_{source_entity_id}`
+      - [ ] Test device_info creation with correct identifiers and metadata
+      - [ ] Test name generation using regex pattern/replacement from config
+      - [ ] Test entity availability based on underlying cover state (not "unavailable"/"unknown")
+    - [ ] **Remapping Logic (remap_value function)**
+      - [ ] Test `RemapDirection.TO_SOURCE`: user 0→0, 1-100→min_value..max_value linearly
+      - [ ] Test `RemapDirection.FROM_SOURCE`: source 0→0, source<min_value→1, min_value..max_value→1-100 linearly
+      - [ ] Test edge cases: None input, min_value==max_value, boundary values
+      - [ ] Test rounding and clamping behavior (returns integers, clamps to valid ranges)
+      - [ ] Test below-minimum handling: source values < min_value return 1 (not 0) in FROM_SOURCE direction
+    - [ ] **Property Logic**
+      - [ ] Test `current_cover_position` returns target while moving, remapped source when static
+      - [ ] Test `current_cover_tilt_position` returns target while moving, remapped source when static
+      - [ ] Test `supported_features` masks only relevant cover features (position, tilt, open, close, stop)
+      - [ ] Test `is_closed` returns True only when position=0 and tilt=0 or None
+      - [ ] Test `is_closing`/`is_opening` based on target vs current position comparison
+      - [ ] Test `device_class` reflection from underlying cover
+      - [ ] Test `is_moving` logic: recently_moving (5s after command) OR cover state OPENING/CLOSING
+    - [ ] **Command Processing & Target Management**
+      - [ ] Test `async_set_cover_position` sets target_position and triggers convergence
+      - [ ] Test `async_set_cover_tilt_position` sets target_tilt and triggers convergence
+      - [ ] Test commands skip convergence if target already matches new value
+      - [ ] Test commands skip convergence if current position already matches target
+      - [ ] Test `async_open_cover` sets max position/tilt targets
+      - [ ] Test `async_close_cover` sets zero position/tilt targets
+      - [ ] Test `async_stop_cover` clears targets and calls stop service
+      - [ ] Test `async_stop_cover_tilt` clears tilt target and calls stop_tilt service
+    - [ ] **Convergence Logic (converge_position)**
+      - [ ] Test target_changed_event is raised to interrupt other waits
+      - [ ] Test tilt-first logic: when both position+tilt set, position≠current, not recently moving
+      - [ ] Test stop-if-moving logic: stops cover if moving but already at target position
+      - [ ] Test position convergence with retry=3 on failure
+      - [ ] Test tilt convergence with retry=3 on failure
+      - [ ] Test `close_tilt_if_down` behavior: sets tilt=0 before target when tilt decreasing
+      - [ ] Test abort logic: exits early if targets change during execution
+      - [ ] Test target cleanup: sets _target_position and _target_tilt to None when done
+    - [ ] **Service Call Logic (_call_service)**
+      - [ ] Test throttling with asyncio_throttle.Throttler
+      - [ ] Test allowed commands validation (set_cover_position, set_cover_tilt_position, stop_cover, stop_cover_tilt)
+      - [ ] Test position confirmation with `_wait_for_attribute` when retry>0
+      - [ ] Test tilt confirmation with `_wait_for_attribute` when retry>0
+      - [ ] Test retry logic with abort_check function
+      - [ ] Test exception handling and logging on service failures
+    - [ ] **Attribute Waiting Logic (_wait_for_attribute)**
+      - [ ] Test waits for underlying cover attribute to match target value
+      - [ ] Test timeout behavior (default 30s)
+      - [ ] Test early exit when target_changed_event is set
+      - [ ] Test custom comparison function (default: abs(val-target)<=1)
+      - [ ] Test state change listener and immediate state checking
+    - [ ] **Throttling & Concurrency**
+      - [ ] Test Throttler integration limits service call frequency
+      - [ ] Test multiple converge_position calls: new targets interrupt previous runs
+      - [ ] Test target_changed_event coordination between operations
+      - [ ] Test async task creation for converge_position doesn't block commands
     - [ ] **Error & Edge Case Handling**
-      - [ ] Test that the entity handles unavailable/unknown states gracefully
-      - [ ] Test that unsupported features (e.g., no tilt) are not exposed in supported_features
-      - [ ] Test that invalid remapping configuration is handled with a clear error or fallback
+      - [ ] Test handling of unavailable/unknown underlying cover states
+      - [ ] Test missing source entity scenarios
+      - [ ] Test device_id safety when source entity has no device
+      - [ ] Test malformed source entity attributes (missing position/tilt)
+      - [ ] Test service call failures and retry exhaustion
+      - [ ] Test timeout scenarios in attribute waiting
+    - [ ] **State Synchronization & Reporting**
+      - [ ] Test state reporting during movement (target values)
+      - [ ] Test state reporting when static (actual source values, remapped)
+      - [ ] Test async_write_ha_state calls at appropriate times
+      - [ ] Test last_position_command timestamp tracking for is_moving
+    - [ ] **Configuration Property Access**
+      - [ ] Test property access for config values: rename_pattern, rename_replacement
+      - [ ] Test property access for remapping ranges: min_pos, max_pos, min_tilt, max_tilt
+      - [ ] Test property access for behavior flags: close_tilt_if_down
+      - [ ] Test default value fallbacks when config missing- If the current (tilt) position is below min, display it as 1 and not 0.
+
 
 - [ ] **Documentation**
   - [ ] Update `README.md` with configuration and usage instructions

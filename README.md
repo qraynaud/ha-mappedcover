@@ -10,7 +10,7 @@
 - Automatically rename mapped covers using regular expressions (`rename_pattern` and `rename_replacement`).
 - Mapped covers are automatically assigned to the same area as their underlying covers.
 - Robust entity and device cleanup when covers are removed or the integration is reconfigured.
-- All configuration and reconfiguration can be done via the Home Assistant UI (Config Flow/Options Flow).
+- All configuration and reconfiguration can be done via the Home Assistant UI (Config Flow).
 - HACS-compatible structure.
 - Throttle: You can define the minimum interval (in milliseconds) between calls to the underlying covers. This helps prevent rate-limiting or overloading physical devices.
 
@@ -35,7 +35,7 @@ Configuration is done via the Home Assistant UI:
 2. Select one or more physical covers to map (already-mapped covers are excluded from selection).
 3. Set the name and remapping options for position and (if available) tilt. Tilt options are shown if any selected cover supports tilt.
 4. Save. New mapped cover entities will be created.
-5. You can reconfigure the mapping (including min/max, name, and tilt) at any time from the integration's options panel.
+5. You can reconfigure the mapping (including min/max, name, and tilt) at any time from the integration's reconfigure options.
 
 ## Usage
 After setup, new cover entities will appear in Home Assistant. Use these entities in automations and dashboards as you would any other cover. Each mapped cover will:
@@ -73,7 +73,7 @@ This allows you to create consistent, descriptive names for your mapped covers a
 - `manifest.json`: Integration metadata.
 - `cover.py`: Implements the mapped cover entity, remapping logic, area assignment, and cleanup.
 - `const.py`: Constants for config keys and domain.
-- `config_flow.py`: UI-based configuration and options flow.
+- `config_flow.py`: UI-based configuration and reconfiguration flow.
 - `translations/`: User-facing strings for config flow (e.g., `en.json`).
 
 ## License

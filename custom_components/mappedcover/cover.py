@@ -42,12 +42,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
   mapped_entities = []
   for cover in covers:
     mapped_entities.append(MappedCover(hass, entry, cover, throttler))
-  async_add_entities(mapped_entities)
+  await async_add_entities(mapped_entities)
 
   # After entities are added, set their area_id only if not already set
   for mapped_entity in mapped_entities:
     src_entity = ent_reg.async_get(mapped_entity._source_entity_id)
-    src_device = dev_reg.async_get(src_entity.device_id)
+    src_device = dev_reg.async_get(src_entity.device_id) if src_entity and src_entity.device_id else None
     area_id = (src_device and src_device.area_id) or (src_entity and src_entity.area_id)
     if area_id:
       mapped_reg_entity = ent_reg.async_get(mapped_entity.entity_id)
@@ -83,7 +83,7 @@ def remap_value(value, min_value, max_value, direction=RemapDirection.TO_SOURCE)
   - RemapDirection.TO_SOURCE: Maps user values (0-100) to the source range [min_value, max_value].
     0 always maps to 0; values 1-100 are mapped linearly to min_value..max_value.
   - RemapDirection.FROM_SOURCE: Maps source values [min_value, max_value] to the user scale (0-100).
-    0 always maps to 0; min_value..max_value are mapped linearly to 1-100.
+    0 always maps to 0; values below min_value map to min_value; min_value..max_value are mapped linearly to 1-100.
 
   Always returns a rounded integer to avoid off-by-one errors.
   Output is clamped to [min_value, max_value] for TO_SOURCE and [0, 100] for FROM_SOURCE.
@@ -93,15 +93,18 @@ def remap_value(value, min_value, max_value, direction=RemapDirection.TO_SOURCE)
   if value == 0:
     return 0
   if max_value == min_value:
-    return 0
+    return 0 if direction == RemapDirection.TO_SOURCE else min_value
   if direction == RemapDirection.TO_SOURCE:
     # 1..100 maps to min_value..max_value linearly
     result = int(round((value - 1) * (max_value - min_value) / 99 + min_value))
     return max(min(result, max_value), min_value)
   else:
+    # Values below min_value map to min_value (which then maps to 1)
+    if value < min_value:
+      return 1
     # min_value..max_value maps to 1..100 linearly
     result = int(round((value - min_value) * 99 / (max_value - min_value) + 1))
-    return max(0, min(result, 100))
+    return max(1, min(result, 100))
 
 class MappedCover(CoverEntity):
   def __init__(self, hass, entry: ConfigEntry, cover, throttler: Throttler):
@@ -116,7 +119,7 @@ class MappedCover(CoverEntity):
     ent_reg = entity_registry.async_get(self.hass)
     dev_reg = device_registry.async_get(self.hass)
     cover = ent_reg.async_get(self._source_entity_id)
-    self._device = dev_reg.async_get(cover.device_id)
+    self._device = dev_reg.async_get(cover.device_id) if cover and cover.device_id else None
     _LOGGER.debug("[%s] Created mapped cover entity", self._source_entity_id)
 
   @property
