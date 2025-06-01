@@ -298,7 +298,7 @@ class MappedCover(CoverEntity):
     finally:
       remove()
 
-  async def _call_service(self, command, data, retry=0, timeout=30):
+  async def _call_service(self, command, data, retry=0, timeout=30, abort_check=None):
     """
     Asynchronously call a Home Assistant cover service with optional retries and attribute confirmation.
     Args:
@@ -307,6 +307,7 @@ class MappedCover(CoverEntity):
       data (dict): The service data to send with the command.
       retry (int, optional): Number of times to retry the command if the target attribute is not reached. Defaults to 0 (no retry).
       timeout (int, optional): Timeout in seconds to wait for the attribute to reach the target value after calling the service. Defaults to 30.
+      abort_check (callable, optional): A function that returns True if the operation should be aborted. Defaults to None.
     Returns:
       bool: True if the service call succeeded (and the attribute reached the target value if applicable), False otherwise.
     Raises:
@@ -324,6 +325,10 @@ class MappedCover(CoverEntity):
     attempt = 0
     while True:
       try:
+        if abort_check and abort_check():
+          _LOGGER.debug("[%s] _call_service: Aborted calling %s", self._source_entity_id, command)
+          return False
+
         async with self._throttler:
           await self.hass.services.async_call(
             "cover", command, data, blocking=True
@@ -365,6 +370,11 @@ class MappedCover(CoverEntity):
     position = self._target_position
     tilt = self._target_tilt
     current_pos = self._source_current_position
+    abort_check = lambda: (
+      self._target_position != position or
+      self._target_tilt != tilt
+    )
+
     _LOGGER.debug("[%s] converge_position: target_position=%s, target_tilt=%s, current_pos=%s", self._source_entity_id, position, tilt, current_pos)
     # Set tilt first if both are set and (target position != current) and the cover is not recently moving
     if tilt is not None and position is not None and (current_pos is None or position != current_pos) and not self.is_moving:
@@ -375,8 +385,9 @@ class MappedCover(CoverEntity):
       await self._call_service(
         "set_cover_tilt_position",
         {"entity_id": self._source_entity_id, "tilt_position": tilt},
+        abort_check=abort_check,
       )
-      if self._target_position != position or self._target_tilt != tilt:
+      if abort_check():
         _LOGGER.debug("[%s] converge_position: abort (position=%s, tilt=%s)", self._source_entity_id, position, tilt)
         return
 
@@ -388,6 +399,7 @@ class MappedCover(CoverEntity):
       _LOGGER.debug("[%s] Cover is moving but already at target position, stopping", self._source_entity_id)
       await asyncio.sleep(1)
       await self._call_service("stop_cover", {"entity_id": self._source_entity_id})
+
       await self._wait_for_attribute("current_position", current_pos, timeout=5, compare=lambda val, target: abs(val - target) > 1)
       current_pos = self._source_current_position
       self.async_write_ha_state()
@@ -397,9 +409,14 @@ class MappedCover(CoverEntity):
       await self._call_service(
         "set_cover_position",
         {"entity_id": self._source_entity_id, "position": position},
-        retry=3
+        retry=3,
+        abort_check=abort_check,
       )
       self.async_write_ha_state()
+
+    if abort_check():
+      _LOGGER.debug("[%s] converge_position: abort (position=%s, tilt=%s)", self._source_entity_id, position, tilt)
+      return
 
     # Set tilt if needed
     if tilt is not None:
@@ -411,23 +428,25 @@ class MappedCover(CoverEntity):
         await self._call_service(
           "set_cover_tilt_position",
           {"entity_id": self._source_entity_id, "tilt_position": 0},
-          retry=3
+          retry=3,
+          abort_check=abort_check,
         )
+
+        if abort_check():
+          _LOGGER.debug("[%s] converge_position: abort (position=%s, tilt=%s)", self._source_entity_id, position, tilt)
+          return
 
       reached = False
 
       if position is not None and current_pos != position:
         reached = await self._wait_for_attribute("current_tilt_position", tilt, 5)
 
-      if self._target_position != position or self._target_tilt != tilt:
-        _LOGGER.debug("[%s] converge_position: abort (position=%s, tilt=%s)", self._source_entity_id, position, tilt)
-        return
-
       if not reached:
         await self._call_service(
           "set_cover_tilt_position",
           {"entity_id": self._source_entity_id, "tilt_position": tilt},
-          retry=3
+          retry=3,
+          abort_check=abort_check,
         )
 
     self._target_position = None
@@ -445,7 +464,6 @@ class MappedCover(CoverEntity):
     if self._target_position == new_target:
       _LOGGER.debug("[%s] async_set_cover_position: Target already set to %s", self._source_entity_id, new_target)
       return
-    src = self.hass.states.get(self._source_entity_id)
     current_pos = self._source_current_position
     if self._target_position is None and current_pos == new_target:
       _LOGGER.debug("[%s] async_set_cover_position: Already at target position %s", self._source_entity_id, new_target)
@@ -467,7 +485,6 @@ class MappedCover(CoverEntity):
     if self._target_tilt == new_target:
       _LOGGER.debug("[%s] async_set_cover_tilt_position: Target already set to %s", self._source_entity_id, new_target)
       return
-    src = self.hass.states.get(self._source_entity_id)
     current_tilt = self._source_current_tilt_position
     if self._target_tilt is None and current_tilt == new_target:
       _LOGGER.debug("[%s] async_set_cover_tilt_position: Already at target tilt %s", self._source_entity_id, new_target)

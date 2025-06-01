@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.3] - 2025-06-01
+### Changed
+- Improved abort logic in mapped cover operations: service calls now reliably abort if the target position or tilt changes during execution.
+- Improved reliability and maintainability of mapped cover convergence logic.
+
 ## [0.4.2] - 2025-05-30
 ### Changed
 - Fixed a regression caused by 0.4.1 causing an exception to be raised for some tilt changes
