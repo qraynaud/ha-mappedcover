@@ -8,6 +8,7 @@ from homeassistant import config_entries
 from homeassistant.helpers import entity_registry
 from homeassistant.helpers.selector import selector
 from homeassistant.config_entries import SOURCE_RECONFIGURE
+from homeassistant.components.cover import CoverEntityFeature
 import logging
 
 from . import const
@@ -19,7 +20,7 @@ def supports_tilt(hass, entity_id):
     state = hass.states.get(entity_id)
     if state and "supported_features" in state.attributes:
       supported_features = state.attributes["supported_features"]
-      return bool(supported_features & (16 | 128))
+      return bool(supported_features & (CoverEntityFeature.OPEN_TILT | CoverEntityFeature.SET_TILT_POSITION))
   except Exception as exc:
     _LOGGER.warning("Could not determine tilt support: %s", exc)
   return False
@@ -69,13 +70,9 @@ class MappedCoverConfigFlow(config_entries.ConfigFlow, domain=const.DOMAIN):
       _LOGGER.debug("Going to configure with data=%s", self._data)
       return await self.async_step_configure()
 
-    errors = {}
     try:
       entity_reg = entity_registry.async_get(self.hass)
-      covers = []
-      for entity in entity_reg.entities.values():
-        if entity.platform == const.DOMAIN:
-          covers.append(entity.entity_id)
+      covers = [entity.entity_id for entity in entity_reg.entities.values() if entity.platform == const.DOMAIN]
       _LOGGER.debug("Found covers to exclude: %s", covers)
     except Exception as exc:
       _LOGGER.error("Error while fetching covers: %s", exc, exc_info=True)
@@ -99,13 +96,11 @@ class MappedCoverConfigFlow(config_entries.ConfigFlow, domain=const.DOMAIN):
     return self.async_show_form(
       step_id="user",
       data_schema=schema,
-      errors=errors,
+      errors={},
     )
 
   async def async_step_configure(self, user_input=None):
     """Unified step for both configure and reconfigure."""
-    errors = {}
-
     if self.source == SOURCE_RECONFIGURE:
       entry = self._get_reconfigure_entry()
       if entry.unique_id:
@@ -115,11 +110,9 @@ class MappedCoverConfigFlow(config_entries.ConfigFlow, domain=const.DOMAIN):
     if user_input is not None:
       self._data.update(user_input)
       _LOGGER.debug("Updating entry with: %s", self._data)
-
       title = self._data["label"]
       data = self._data.copy()
       del data["label"]
-
       if self.source == SOURCE_RECONFIGURE:
         return self.async_update_reload_and_abort(
           entry=entry,
@@ -129,25 +122,16 @@ class MappedCoverConfigFlow(config_entries.ConfigFlow, domain=const.DOMAIN):
       else:
         return self.async_create_entry(title=title, data=data)
 
-    tilt_supported = False
-    try:
-      for cover in self._data["covers"]:
-        tilt_supported = supports_tilt(self.hass, cover)
-        if tilt_supported:
-          break
-    except Exception as exc:
-      _LOGGER.warning("Could not determine tilt support: %s", exc)
-
+    tilt_supported = any(supports_tilt(self.hass, cover) for cover in self._data["covers"])
     schema = build_remap_schema(
       tilt_supported=tilt_supported,
       data=self._data,
     )
-
     _LOGGER.debug("Showing configure form...")
     return self.async_show_form(
       step_id="configure",
       data_schema=schema,
-      errors=errors,
+      errors={},
     )
 
   async def async_step_reconfigure(self, user_input=None):
