@@ -1,9 +1,19 @@
 import pytest
 import shutil
 import os
+import sys
 from pathlib import Path
 
 pytest_plugins = ["pytest_homeassistant_custom_component"]
+
+# Set up the Python path to ensure consistent imports
+# Add the project root to sys.path so 'tests.helpers' and 'tests.fixtures' work
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+# Now we can reliably import from tests.fixtures
+from tests.fixtures import *
 
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):

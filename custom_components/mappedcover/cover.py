@@ -57,15 +57,24 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 async def async_unload_entry(hass, entry):
   """Unload a config entry."""
-  # Unload all entities
-  _LOGGER.debug("Unloading entry: %s − covers: %s", entry.entry_id, entry.data.get("covers", []))
+  # Find and clean up mapped entities for this config entry
+  _LOGGER.debug("Platform unloading entry: %s − covers: %s", entry.entry_id, entry.data.get("covers", []))
   ent_reg = entity_registry.async_get(hass)
   dev_reg = device_registry.async_get(hass)
 
-  for cover in entry.data.get("covers", []):
-    entity = ent_reg.async_get(cover)
-    ent_reg.async_remove(entity.entity_id)
-    dev_reg.async_remove_device(entity.device_id)
+  # Find all mapped entities that belong to this config entry
+  mapped_entities = [
+    entity for entity in ent_reg.entities.values()
+    if entity.platform == const.DOMAIN and entity.config_entry_id == entry.entry_id
+  ]
+
+  # Remove from registries - this should trigger async_will_remove_from_hass
+  for entity_entry in mapped_entities:
+    _LOGGER.debug("Removing mapped entity: %s", entity_entry.entity_id)
+    ent_reg.async_remove(entity_entry.entity_id)
+    if entity_entry.device_id:
+      dev_reg.async_remove_device(entity_entry.device_id)
+
   return True
 
 async def async_remove_entry(hass, entry):
@@ -116,11 +125,41 @@ class MappedCover(CoverEntity):
     self._target_tilt = None
     self._target_changed_event = asyncio.Event()
     self._last_position_command = 0  # Timestamp of last position command
+    self._running_tasks = set()  # Track running tasks for cleanup
+    self._state_listeners = []  # Track state listeners for cleanup
     ent_reg = entity_registry.async_get(self.hass)
     dev_reg = device_registry.async_get(self.hass)
     cover = ent_reg.async_get(self._source_entity_id)
     self._device = dev_reg.async_get(cover.device_id) if cover and cover.device_id else None
     _LOGGER.debug("[%s] Created mapped cover entity", self._source_entity_id)
+
+  async def async_will_remove_from_hass(self) -> None:
+    """Cleanup when entity is being removed."""
+    # Cancel all running tasks
+    for task in self._running_tasks:
+      if not task.done():
+        task.cancel()
+
+    # Remove all state listeners
+    for remove_listener in self._state_listeners:
+      remove_listener()
+
+    # Clear event to wake up any waiting coroutines
+    self._target_changed_event.set()
+
+    # Clear collections
+    self._running_tasks.clear()
+    self._state_listeners.clear()
+
+    _LOGGER.debug("[%s] Cleaned up mapped cover entity", self._source_entity_id)
+
+  def _create_tracked_task(self, coro):
+    """Create a task and track it for cleanup."""
+    task = self.hass.async_create_task(coro)
+    self._running_tasks.add(task)
+    # Remove from tracking when done
+    task.add_done_callback(lambda t: self._running_tasks.discard(t))
+    return task
 
   @property
   def _source_current_position(self):
@@ -283,13 +322,18 @@ class MappedCover(CoverEntity):
           fut.set_result(True)
 
     remove = async_track_state_change_event(hass, [entity_id], state_listener)
+    self._state_listeners.append(remove)  # Track for cleanup
+
     # Check current state immediately
     state = hass.states.get(entity_id)
     if _attr_reached(state):
       remove()
+      self._state_listeners.remove(remove)
       return True
     try:
       event_wait_task = asyncio.create_task(event.wait())
+      self._running_tasks.add(event_wait_task)  # Track for cleanup
+
       done, _ = await asyncio.wait(
         [fut, event_wait_task],
         timeout=timeout,
@@ -300,6 +344,10 @@ class MappedCover(CoverEntity):
       return False
     finally:
       remove()
+      if remove in self._state_listeners:
+        self._state_listeners.remove(remove)
+      if event_wait_task in self._running_tasks:
+        self._running_tasks.remove(event_wait_task)
 
   async def _call_service(self, command, data, retry=0, timeout=30, abort_check=None):
     """
@@ -477,7 +525,7 @@ class MappedCover(CoverEntity):
       current_tilt = self._source_current_tilt_position
       if current_tilt is not None:
         self._target_tilt = current_tilt
-    self.hass.async_create_task(self.converge_position())
+    self._create_tracked_task(self.converge_position())
 
   async def async_set_cover_tilt_position(self, **kwargs):
     tilt = kwargs.get("tilt_position")
@@ -493,7 +541,7 @@ class MappedCover(CoverEntity):
       _LOGGER.debug("[%s] async_set_cover_tilt_position: Already at target tilt %s", self._source_entity_id, new_target)
       return
     self._target_tilt = new_target
-    self.hass.async_create_task(self.converge_position())
+    self._create_tracked_task(self.converge_position())
 
   async def async_open_cover(self, **kwargs):
     features = self.supported_features
@@ -503,7 +551,7 @@ class MappedCover(CoverEntity):
     if features & CoverEntityFeature.SET_TILT_POSITION and self._source_current_tilt_position != self._max_tilt:
       self._target_tilt = self._max_tilt
     if self._target_position is not None or self._target_tilt is not None:
-      self.hass.async_create_task(self.converge_position())
+      self._create_tracked_task(self.converge_position())
 
   async def async_close_cover(self, **kwargs):
     features = self.supported_features
@@ -512,17 +560,17 @@ class MappedCover(CoverEntity):
     if features & CoverEntityFeature.SET_TILT_POSITION and self._source_current_tilt_position != 0:
       self._target_tilt = 0
     if self._target_position is not None or self._target_tilt is not None:
-      self.hass.async_create_task(self.converge_position())
+      self._create_tracked_task(self.converge_position())
 
   async def async_open_cover_tilt(self, **kwargs):
     if self._source_current_tilt_position != self._max_tilt:
       self._target_tilt = self._max_tilt
-      self.hass.async_create_task(self.converge_position())
+      self._create_tracked_task(self.converge_position())
 
   async def async_close_cover_tilt(self, **kwargs):
     if self._source_current_tilt_position != 0:
       self._target_tilt = 0
-      self.hass.async_create_task(self.converge_position())
+      self._create_tracked_task(self.converge_position())
 
   async def async_stop_cover(self, **kwargs):
     _LOGGER.debug(

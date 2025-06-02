@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 - Add test coverage.
 - If the current (tilt) position is below min, display it as 1 and not 0.
 - Fixes issues found thanks to the tests.
+- Fixes the cleanup that did not cancel timers properly
 
 ## [0.4.3] - 2025-06-01
 ### Changed

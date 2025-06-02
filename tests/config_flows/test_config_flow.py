@@ -4,20 +4,21 @@ from homeassistant import data_entry_flow
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
+# Import shared helpers
+from tests.helpers import (
+    create_standard_mock_covers,
+    assert_config_flow_step,
+    complete_config_flow_step,
+    assert_config_entry_created,
+    FEATURES_BASIC,
+    FEATURES_WITH_TILT,
+    STANDARD_CONFIG_DATA,
+)
+
 # Constants for test
 DOMAIN = "mappedcover"
 
 pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
-
-@pytest.fixture
-async def mock_cover_entities(hass: HomeAssistant):
-  """Set up mock mappedcover entities in the state machine."""
-  # Feature 15 = OPEN+CLOSE+SET_POSITION+STOP (1+2+4+8)
-  # Feature 143 = 15 + OPEN_TILT+SET_TILT_POSITION (15+16+128)
-  hass.states.async_set("cover.real_mappedcover", "closed", {"supported_features": 143, "device_class": "mappedcover"})
-  hass.states.async_set("cover.another_mappedcover", "open", {"supported_features": 143, "device_class": "blind"})
-  hass.states.async_set("cover.mapped_mappedcover_1", "closed", {"supported_features": 143, "device_class": "mappedcover"})
-  yield
 
 async def test_config_flow_step_user_shows_required_fields(hass, mock_cover_entities):
   """Test that the first config flow step displays cover selection fields."""
@@ -25,13 +26,7 @@ async def test_config_flow_step_user_shows_required_fields(hass, mock_cover_enti
   result = await hass.config_entries.flow.async_init(
       DOMAIN, context={"source": "user"}
   )
-  assert result["type"] == "form"
-  assert result["step_id"] == "user"
-  data_schema = result["data_schema"]
-  # First step should have label and covers fields
-  fields = str(data_schema).lower()
-  assert "label" in fields
-  assert "covers" in fields
+  await assert_config_flow_step(result, "user", ["label", "covers"])
 
 async def test_config_flow_excludes_mapped_covers(hass, mock_cover_entities):
   """Test that only valid, non-mapped cover entities are selectable."""
@@ -39,11 +34,9 @@ async def test_config_flow_excludes_mapped_covers(hass, mock_cover_entities):
   result = await hass.config_entries.flow.async_init(
       DOMAIN, context={"source": "user"}
   )
-  # Check that the form was returned successfully
-  assert result["type"] == "form"
-  assert result["step_id"] == "user"
-  # The config flow should complete successfully - the entity exclusion logic
+  # Check that the form was returned successfully - the entity exclusion logic
   # is tested by the integration working correctly, not by parsing schema strings
+  await assert_config_flow_step(result, "user")
   data_schema = result["data_schema"]
   assert data_schema is not None
 
@@ -165,7 +158,7 @@ async def test_config_flow_tilt_options_only_if_supported(hass, mock_cover_entit
 async def test_config_flow_entity_registry_access_fails(hass, mock_cover_entities):
   """Test error handling when entity registry access fails (internal_error abort)."""
   await async_setup_component(hass, DOMAIN, {})
-  
+
   with patch("homeassistant.helpers.entity_registry.async_get", side_effect=Exception("Registry error")):
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": "user"}
@@ -188,12 +181,12 @@ async def test_config_flow_mixed_tilt_support(hass, mock_cover_entities):
   # Add covers with different tilt support
   hass.states.async_set("cover.tilt_cover", "closed", {"supported_features": 143})  # Has tilt
   hass.states.async_set("cover.no_tilt_cover", "closed", {"supported_features": 15})  # No tilt
-  
+
   await async_setup_component(hass, DOMAIN, {})
   result = await hass.config_entries.flow.async_init(
       DOMAIN, context={"source": "user"}
   )
-  
+
   # Select both covers
   user_input = {
       "label": "Mixed Tilt Test",
@@ -202,7 +195,7 @@ async def test_config_flow_mixed_tilt_support(hass, mock_cover_entities):
   result2 = await hass.config_entries.flow.async_configure(result["flow_id"], user_input=user_input)
   assert result2["type"] == "form"
   assert result2["step_id"] == "configure"
-  
+
   # Should show tilt fields because at least one cover supports tilt
   data_schema = result2["data_schema"]
   fields = str(data_schema).lower()
@@ -219,13 +212,13 @@ async def test_config_flow_validates_at_least_one_cover_selected(hass, mock_cove
   result = await hass.config_entries.flow.async_init(
       DOMAIN, context={"source": "user"}
   )
-  
+
   # Try to submit with empty covers list
   user_input = {
       "label": "Test Empty Covers",
       "covers": [],  # Empty list should be invalid
   }
-  
+
   with pytest.raises(data_entry_flow.InvalidData):
     await hass.config_entries.flow.async_configure(result["flow_id"], user_input=user_input)
 
@@ -235,14 +228,14 @@ async def test_config_flow_range_validation_edge_cases(hass, mock_cover_entities
   result = await hass.config_entries.flow.async_init(
       DOMAIN, context={"source": "user"}
   )
-  
+
   # Complete first step
   user_input_step1 = {
       "label": "Edge Case Test",
       "covers": ["cover.real_mappedcover"],
   }
   result2 = await hass.config_entries.flow.async_configure(result["flow_id"], user_input=user_input_step1)
-  
+
   # Test valid edge values (0 and 100)
   user_input_step2 = {
       "rename_pattern": "^(.*)$",
@@ -254,20 +247,20 @@ async def test_config_flow_range_validation_edge_cases(hass, mock_cover_entities
   }
   result3 = await hass.config_entries.flow.async_configure(result2["flow_id"], user_input=user_input_step2)
   assert result3["type"] == "create_entry"
-  
+
   # Test invalid edge values
   result4 = await hass.config_entries.flow.async_init(
       DOMAIN, context={"source": "user"}
   )
   result5 = await hass.config_entries.flow.async_configure(result4["flow_id"], user_input=user_input_step1)
-  
+
   user_input_invalid = {
       "rename_pattern": "^(.*)$",
       "rename_replacement": "Mapped \\1",
       "min_position": -1,  # Invalid: < 0
       "max_position": 101,  # Invalid: > 100
   }
-  
+
   with pytest.raises(data_entry_flow.InvalidData):
     await hass.config_entries.flow.async_configure(result5["flow_id"], user_input=user_input_invalid)
 
@@ -277,7 +270,7 @@ async def test_config_flow_string_field_validation(hass, mock_cover_entities):
   result = await hass.config_entries.flow.async_init(
       DOMAIN, context={"source": "user"}
   )
-  
+
   # Test empty label (should be allowed as it's just a string field)
   user_input_step1 = {
       "label": "",  # Empty label
@@ -286,7 +279,7 @@ async def test_config_flow_string_field_validation(hass, mock_cover_entities):
   result2 = await hass.config_entries.flow.async_configure(result["flow_id"], user_input=user_input_step1)
   assert result2["type"] == "form"
   assert result2["step_id"] == "configure"
-  
+
   # Test malformed regex pattern (config flow doesn't validate regex, that's runtime)
   user_input_step2 = {
       "rename_pattern": "[unclosed",  # Malformed regex
@@ -305,32 +298,32 @@ async def test_config_flow_string_field_validation(hass, mock_cover_entities):
 async def test_config_flow_default_values_from_constants(hass, mock_cover_entities):
   """Test default values are properly applied from constants."""
   from custom_components.mappedcover import const
-  
+
   await async_setup_component(hass, DOMAIN, {})
   result = await hass.config_entries.flow.async_init(
       DOMAIN, context={"source": "user"}
   )
-  
+
   # Test that the form is shown correctly (schema exists)
   assert result["type"] == "form"
   assert result["step_id"] == "user"
   data_schema = result["data_schema"]
   assert data_schema is not None
-  
+
   # Complete first step with defaults
   user_input_step1 = {
       "label": const.DEFAULT_LABEL,
       "covers": ["cover.real_mappedcover"],
   }
   result2 = await hass.config_entries.flow.async_configure(result["flow_id"], user_input=user_input_step1)
-  
+
   # Complete second step accepting all defaults
   user_input_step2 = {}  # Accept all defaults
   result3 = await hass.config_entries.flow.async_configure(result2["flow_id"], user_input=user_input_step2)
-  
+
   assert result3["type"] == "create_entry"
   data = result3["data"]
-  
+
   # Verify all default values are applied
   assert data["rename_pattern"] == const.DEFAULT_RENAME_PATTERN
   assert data["rename_replacement"] == const.DEFAULT_RENAME_REPLACEMENT
@@ -344,18 +337,18 @@ async def test_config_flow_default_values_from_constants(hass, mock_cover_entiti
 async def test_config_flow_optional_fields_defaults(hass, mock_cover_entities):
   """Test optional fields have correct defaults (close_tilt_if_down, throttle)."""
   from custom_components.mappedcover import const
-  
+
   await async_setup_component(hass, DOMAIN, {})
   result = await hass.config_entries.flow.async_init(
       DOMAIN, context={"source": "user"}
   )
-  
+
   user_input_step1 = {
       "label": "Test Defaults",
       "covers": ["cover.real_mappedcover"],
   }
   result2 = await hass.config_entries.flow.async_configure(result["flow_id"], user_input=user_input_step1)
-  
+
   # Only specify required fields, leave optional ones as default
   user_input_step2 = {
       "rename_pattern": "^(.*)$",
@@ -366,10 +359,10 @@ async def test_config_flow_optional_fields_defaults(hass, mock_cover_entities):
       "max_tilt_position": 95,
   }
   result3 = await hass.config_entries.flow.async_configure(result2["flow_id"], user_input=user_input_step2)
-  
+
   assert result3["type"] == "create_entry"
   data = result3["data"]
-  
+
   # Verify optional fields get defaults
   assert data["close_tilt_if_down"] == const.DEFAULT_CLOSE_TILT_IF_DOWN
   assert data["throttle"] == const.DEFAULT_THROTTLE
@@ -381,26 +374,26 @@ async def test_config_flow_optional_fields_defaults(hass, mock_cover_entities):
 async def test_supports_tilt_function_error_handling(hass):
   """Test supports_tilt function error handling (missing state, malformed attributes)."""
   from custom_components.mappedcover.config_flow import supports_tilt
-  
+
   # Test with missing entity
   result = supports_tilt(hass, "cover.nonexistent")
   assert result == False
-  
+
   # Test with entity that has no supported_features attribute
   hass.states.async_set("cover.no_features", "closed", {})
   result = supports_tilt(hass, "cover.no_features")
   assert result == False
-  
+
   # Test with malformed supported_features (non-integer)
   hass.states.async_set("cover.malformed_features", "closed", {"supported_features": "not_a_number"})
   result = supports_tilt(hass, "cover.malformed_features")
   assert result == False
-  
+
   # Test with valid tilt support
   hass.states.async_set("cover.tilt_supported", "closed", {"supported_features": 143})
   result = supports_tilt(hass, "cover.tilt_supported")
   assert result == True
-  
+
   # Test with no tilt support
   hass.states.async_set("cover.no_tilt", "closed", {"supported_features": 15})
   result = supports_tilt(hass, "cover.no_tilt")
@@ -410,7 +403,7 @@ async def test_build_remap_schema_various_scenarios(hass):
   """Test build_remap_schema with various tilt_supported scenarios."""
   from custom_components.mappedcover.config_flow import build_remap_schema
   from custom_components.mappedcover import const
-  
+
   # Test without tilt support
   schema_no_tilt = build_remap_schema(tilt_supported=False)
   fields = str(schema_no_tilt).lower()
@@ -418,7 +411,7 @@ async def test_build_remap_schema_various_scenarios(hass):
   assert "max_position" in fields
   assert "min_tilt_position" not in fields
   assert "max_tilt_position" not in fields
-  
+
   # Test with tilt support
   schema_with_tilt = build_remap_schema(tilt_supported=True)
   fields = str(schema_with_tilt).lower()
@@ -426,10 +419,10 @@ async def test_build_remap_schema_various_scenarios(hass):
   assert "max_position" in fields
   assert "min_tilt_position" in fields
   assert "max_tilt_position" in fields
-  
+
   # Test that schema creation works with custom data (the main functionality)
   custom_data = {
-      "rename_pattern": "custom_pattern", 
+      "rename_pattern": "custom_pattern",
       "rename_replacement": "custom_replacement",
       "min_position": 25,
       "max_position": 75,
@@ -438,9 +431,9 @@ async def test_build_remap_schema_various_scenarios(hass):
       "close_tilt_if_down": False,
       "throttle": 200,
   }
-  
+
   schema_with_data = build_remap_schema(tilt_supported=True, data=custom_data)
-  
+
   # Verify the schema was created successfully
   assert schema_with_data is not None
   schema_str = str(schema_with_data)

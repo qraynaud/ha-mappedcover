@@ -7,7 +7,6 @@ from unittest.mock import patch, MagicMock, call
 # Add the parent directory to path so custom_components can be found
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
-# Remove duplicate import
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_registry import async_get as get_entity_registry
@@ -18,122 +17,18 @@ from custom_components.mappedcover.cover import async_setup_entry, async_unload_
 from custom_components.mappedcover import async_unload_entry
 from custom_components.mappedcover.const import DOMAIN
 
-# Create a mock Throttler class
-class MockThrottler:
-  def __init__(self, *args, **kwargs):
-    pass
+# Import shared helpers and constants
+from tests.helpers import (
+  MockThrottler,
+  cleanup_platform_timers,
+  setup_platform_with_entities,
+  create_mock_config_entry,
+  TEST_ENTRY_ID,
+  TEST_COVER_ID,
+  TEST_AREA_ID,
+)
 
-  async def __aenter__(self):
-    return self
 
-  async def __aexit__(self, *args, **kwargs):
-    pass
-
-# Mock constants for testing
-TEST_ENTRY_ID = "test_entry_id"
-TEST_COVER_ID = "cover.test_cover"
-TEST_AREA_ID = "test_area"
-
-@pytest.fixture
-async def mock_config_entry(hass):
-  """Create a mock config entry and register it with Home Assistant."""
-  entry = ConfigEntry(
-    version=1,
-    domain=DOMAIN,
-    title="Test Mapped Cover",
-    data={
-      "covers": [TEST_COVER_ID],
-      "rename_pattern": "^(.*)$",
-      "rename_replacement": "Mapped \\1",
-      "min_position": 10,
-      "max_position": 90,
-      "min_tilt_position": 5,
-      "max_tilt_position": 95,
-    },
-    source="user",
-    options={},
-    unique_id=TEST_ENTRY_ID,
-    minor_version=1,
-    discovery_keys=[],
-    subentries_data={}
-  )
-
-  # Add the entry directly to Home Assistant
-  await hass.config_entries.async_add(entry)
-
-  # Return the entry
-  return entry
-
-@pytest.fixture
-def mock_source_cover_state(hass):
-  """Create a mock state for the source cover entity."""
-  hass.states.async_set(
-    TEST_COVER_ID,
-    "closed",
-    {
-      "supported_features": 143,  # Support position and tilt
-      "current_position": 0,
-      "current_tilt_position": 0,
-      "device_class": "blind"
-    }
-  )
-
-@pytest.fixture
-async def mock_area_registry(hass):
-  """Mock the area registry with a test area."""
-  area_registry = get_area_registry(hass)
-  area = area_registry.async_create(TEST_AREA_ID)
-  return area_registry, area.id
-
-@pytest.fixture
-async def mock_device_registry(hass, mock_config_entry):
-  """Mock the device registry with a test device for the source cover."""
-  device_registry = get_device_registry(hass)
-  device = device_registry.async_get_or_create(
-    config_entry_id=mock_config_entry.entry_id,  # Use an existing config entry ID
-    identifiers={("cover", "test_source_device")},
-    name="Test Source Device",
-    manufacturer="Test Manufacturer",
-    model="Test Model"
-  )
-
-  # Associate device with area
-  area_registry = get_area_registry(hass)
-  area = area_registry.async_get_or_create(TEST_AREA_ID)
-  device_registry.async_update_device(device.id, area_id=area.id)
-
-  return device_registry, device.id
-
-@pytest.fixture
-async def mock_entity_registry(hass, mock_device_registry):
-  """Mock the entity registry with a source cover entity."""
-  device_registry, device_id = mock_device_registry
-
-  entity_registry = get_entity_registry(hass)
-  entry = entity_registry.async_get_or_create(
-    COVER_DOMAIN,
-    "test",
-    "test_cover",
-    device_id=device_id,
-    original_name="Test Cover"
-  )
-
-  return entity_registry, entry.entity_id
-
-# Helper function to reduce code duplication in test functions
-async def setup_platform_with_entities(hass, mock_config_entry):
-  """Helper to setup platform and return added entities."""
-  added_entities = []
-
-  async def mock_add_entities(entities, update_before_add=False):
-    added_entities.extend(entities)
-
-  with patch("custom_components.mappedcover.cover.Throttler", MockThrottler):
-    await async_setup_entry(hass, mock_config_entry, mock_add_entities)
-
-  return added_entities
-
-@pytest.mark.parametrize("expected_lingering_timers", [True])
 async def test_async_setup_entry_creates_mapped_entities(hass, mock_config_entry, mock_source_cover_state):
   """Test async_setup_entry creates mapped entities for all configured covers."""
   added_entities = await setup_platform_with_entities(hass, mock_config_entry)
@@ -152,7 +47,9 @@ async def test_async_setup_entry_creates_mapped_entities(hass, mock_config_entry
   assert entity.name == "Mapped cover.test_cover"
   assert entity._source_entity_id == TEST_COVER_ID
 
-@pytest.mark.parametrize("expected_lingering_timers", [True])
+  # Clean up platform timers to avoid lingering timer warnings
+  await cleanup_platform_timers(hass)
+
 async def test_entity_removal_and_device_cleanup(hass, mock_config_entry, mock_source_cover_state, mock_entity_registry):
   """Test entity removal and device cleanup when covers are removed from config."""
   entity_registry, source_entity_id = mock_entity_registry
@@ -183,23 +80,10 @@ async def test_entity_removal_and_device_cleanup(hass, mock_config_entry, mock_s
   )
 
   # Now update config to remove the cover
-  updated_config = ConfigEntry(
-    version=1,
-    domain=DOMAIN,
-    title="Test Mapped Cover",
-    data={
-      "covers": [],  # Empty list - no covers
-      "rename_pattern": "^(.*)$",
-      "rename_replacement": "Mapped \\1",
-      "min_position": 10,
-      "max_position": 90,
-    },
-    source="user",
-    options={},
-    unique_id=TEST_ENTRY_ID,
-    minor_version=1,
-    discovery_keys=[],
-    subentries_data={}
+  updated_config = await create_mock_config_entry(
+    hass,
+    entry_id="updated_test_entry_id",
+    covers=[],  # Empty list - no covers
   )
 
   # Manually remove the entity to simulate what your component should be doing
@@ -225,7 +109,9 @@ async def test_entity_removal_and_device_cleanup(hass, mock_config_entry, mock_s
     device_registry.async_remove_device(device.id)
   assert device_registry.async_get_device({(DOMAIN, unique_id)}) is None
 
-@pytest.mark.parametrize("expected_lingering_timers", [True])
+  # Clean up platform timers to avoid lingering timer warnings
+  await cleanup_platform_timers(hass)
+
 async def test_area_assignment_from_source_entity(
   hass, mock_config_entry, mock_source_cover_state, mock_area_registry, mock_entity_registry
 ):
@@ -263,7 +149,9 @@ async def test_area_assignment_from_source_entity(
   # Verify the entity has the same area as the source entity
   assert registered_entity.area_id == area_id
 
-@pytest.mark.parametrize("expected_lingering_timers", [True])
+  # Clean up platform timers to avoid lingering timer warnings
+  await cleanup_platform_timers(hass)
+
 async def test_async_unload_entry_cleanup(hass, mock_config_entry, mock_source_cover_state):
   """Test async_unload_entry properly cleans up entities."""
   # Setup the platform
@@ -298,3 +186,6 @@ async def test_async_unload_entry_cleanup(hass, mock_config_entry, mock_source_c
   assert result is True
   assert mock_config_entry.entry_id not in hass.data.get(DOMAIN, {})
   mock_unload.assert_called_once()
+
+  # Clean up platform timers to avoid lingering timer warnings
+  await cleanup_platform_timers(hass)
