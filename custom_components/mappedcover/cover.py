@@ -330,15 +330,21 @@ class MappedCover(CoverEntity):
       remove()
       self._state_listeners.remove(remove)
       return True
+    event_wait_task = None
     try:
       event_wait_task = asyncio.create_task(event.wait())
       self._running_tasks.add(event_wait_task)  # Track for cleanup
 
-      done, _ = await asyncio.wait(
+      done, pending = await asyncio.wait(
         [fut, event_wait_task],
         timeout=timeout,
         return_when=asyncio.FIRST_COMPLETED,
       )
+
+      # Cancel any pending tasks to prevent task cleanup warnings
+      for task in pending:
+        task.cancel()
+
       if fut in done and fut.done() and fut.result():
         return True
       return False
@@ -346,8 +352,11 @@ class MappedCover(CoverEntity):
       remove()
       if remove in self._state_listeners:
         self._state_listeners.remove(remove)
-      if event_wait_task in self._running_tasks:
-        self._running_tasks.remove(event_wait_task)
+      if event_wait_task is not None:
+        if not event_wait_task.done():
+          event_wait_task.cancel()
+        if event_wait_task in self._running_tasks:
+          self._running_tasks.remove(event_wait_task)
 
   async def _call_service(self, command, data, retry=0, timeout=30, abort_check=None):
     """
@@ -373,6 +382,13 @@ class MappedCover(CoverEntity):
     }
     if command not in allowed_commands:
       raise ValueError(f"Command {command} not allowed")
+
+    # Update timestamp for position-related commands that cause cover movement
+    # Note: tilt commands adjust slats but don't move the cover itself
+    position_commands = {"set_cover_position"}
+    if command in position_commands:
+      self._last_position_command = time.time()
+
     attempt = 0
     while True:
       try:
@@ -402,8 +418,9 @@ class MappedCover(CoverEntity):
       except Exception as e:
         _LOGGER.warning("[%s] _call_service: Exception on %s: %s (attempt %d)", self._source_entity_id, command, e, attempt + 1)
       attempt += 1
-      if attempt > retry and retry > 0:
-        _LOGGER.warning("[%s] _call_service: Max retries (%s) reached for %s", self._source_entity_id, retry, command)
+      if attempt > retry:
+        if retry > 0:
+          _LOGGER.warning("[%s] _call_service: Max retries (%s) reached for %s", self._source_entity_id, retry, command)
         break
       await asyncio.sleep(1)
     return False

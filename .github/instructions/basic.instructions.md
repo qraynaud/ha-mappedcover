@@ -1,0 +1,16 @@
+---
+applyTo: '**'
+---
+Coding standards, domain knowledge, and preferences that AI should follow.
+Whenever writing code, please follow these guidelines:
+1. **Use Clear and Descriptive Names**: Variable, function, and class names should be self-explanatory.
+2. **Keep Functions Short**: Each function should do one thing and do it well. If a function is getting too long, consider breaking it down into smaller functions.
+3. **Comment Wisely**: Use comments to explain why something is done, not what is done. The code should be self-documenting.
+4. **Consistent Formatting**: Follow a consistent style guide for indentation, spacing, and line breaks. Please look for the .editorconfig file in the root of the repository for details.
+5. **Error Handling**: Always handle potential errors gracefully. Use try-except blocks where appropriate.
+6. **Avoid Global Variables**: Use local variables and pass them as parameters to functions to avoid side effects.
+7. **Write Tests**: Include unit tests for your code to ensure it works as expected. Use a testing framework like pytest.
+8. **Flow control**: Use clear and logical flow control structures. Avoid deeply nested loops and conditionals. Use early returns to simplify logic.
+9. **Asynchronous code**: Prefer using async/await for asynchronous operations to keep the code readable and maintainable.
+10. **Documentation**: Write clear and concise documentation for your code, including how to use it and any dependencies it has. Update the README.md files as necessary.
+11. **Code duplication**: Avoid duplicating code. If you find yourself copying and pasting, consider creating a new function or module. Including in tests.

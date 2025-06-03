@@ -1,6 +1,6 @@
 # TODO
 
-**Current Status**: Core functionality complete with comprehensive config flow and reconfiguration testing. All 31 tests are passing. Test infrastructure has been reorganized into logical directories: `tests/config_flows/` (24 tests) and `tests/cover_entities/` (7 tests). Next step is implementing the detailed cover entity logic tests in separate focused test files.
+**Current Status**: Core functionality complete with comprehensive config flow and reconfiguration testing. Test infrastructure has been reorganized into logical directories: `tests/config_flows/` (24 tests) and `tests/cover_entities/` (100+ tests). Property logic testing is complete with comprehensive coverage of all MappedCover properties including name generation with regex patterns and device_info structure. Error handling tests are complete. State synchronization tests are complete with all tests passing after fixing timestamp tracking architecture changes. Only configuration access testing remains to be implemented.
 
 - [x] **Project Setup**
   - [x] Ensure `custom_components/mappedcover/` exists with `__init__.py`, `manifest.json`, `sensor.py`, `const.py`
@@ -94,7 +94,7 @@
       - [x] Test edge cases: None input, min_value==max_value, boundary values
       - [x] Test rounding and clamping behavior (returns integers, clamps to valid ranges)
       - [x] Test below-minimum handling: source values < min_value return 1 (not 0) in FROM_SOURCE direction
-    - [x] **test_property_logic.py** - Property logic testing (32 tests)
+    - [x] **test_property_logic.py** - Property logic testing (62 tests)
       - [x] Test `current_cover_position` returns target while moving, remapped source when static
       - [x] Test `current_cover_tilt_position` returns target while moving, remapped source when static
       - [x] Test `supported_features` masks only relevant cover features (position, tilt, open, close, stop)
@@ -102,7 +102,11 @@
       - [x] Test `is_closing`/`is_opening` based on target vs current position comparison
       - [x] Test `device_class` reflection from underlying cover
       - [x] Test `is_moving` logic: recently_moving (5s after command) OR cover state OPENING/CLOSING
-    - [x] **test_command_processing.py** - Command processing and target management testing
+      - [x] Test `available`: should be False if the state of the underlying cover is not available and True otherwise
+      - [x] Test `unique_id`: should produce a proper unique_id that will be tied to the underlying cover
+      - [x] Test `name`: should produce a name mapped using the config regexps
+      - [x] Test `device_info`: should provide the necessary data for Home Assistant to create a unique device of each cover
+    - [x] **test_command_processing.py** - Command processing and target management testing (45 tests)
       - [x] Test `async_set_cover_position` sets target_position and triggers convergence
       - [x] Test `async_set_cover_tilt_position` sets target_tilt and triggers convergence
       - [x] Test commands skip convergence if target already matches new value
@@ -111,6 +115,7 @@
       - [x] Test `async_close_cover` sets zero position/tilt targets
       - [x] Test `async_stop_cover` clears targets and calls stop service
       - [x] Test `async_stop_cover_tilt` clears tilt target and calls stop_tilt service
+      - [x] Test `_last_position_command` timestamp tracking in command processing context
     - [x] **test_convergence_logic.py** - Convergence logic testing (converge_position)
       - [x] Test target_changed_event is raised to interrupt other waits
       - [x] Test tilt-first logic: when both position+tilt set, position≠current, not recently moving
@@ -120,47 +125,52 @@
       - [x] Test `close_tilt_if_down` behavior: sets tilt=0 before target when tilt decreasing
       - [x] Test abort logic: exits early if targets change during execution
       - [x] Test target cleanup: sets _target_position and _target_tilt to None when done
-    - [ ] **test_service_calls.py** - Service call logic testing (_call_service)
-      - [ ] Test throttling with asyncio_throttle.Throttler
-      - [ ] Test allowed commands validation (set_cover_position, set_cover_tilt_position, stop_cover, stop_cover_tilt)
-      - [ ] Test position confirmation with `_wait_for_attribute` when retry>0
-      - [ ] Test tilt confirmation with `_wait_for_attribute` when retry>0
-      - [ ] Test retry logic with abort_check function
-      - [ ] Test exception handling and logging on service failures
-    - [ ] **test_attribute_waiting.py** - Attribute waiting logic testing (_wait_for_attribute)
-      - [ ] Test waits for underlying cover attribute to match target value
-      - [ ] Test timeout behavior (default 30s)
-      - [ ] Test early exit when target_changed_event is set
-      - [ ] Test custom comparison function (default: abs(val-target)<=1)
-      - [ ] Test state change listener and immediate state checking
-    - [ ] **test_throttling_concurrency.py** - Throttling and concurrency testing
-      - [ ] Test Throttler integration limits service call frequency
-      - [ ] Test multiple converge_position calls: new targets interrupt previous runs
-      - [ ] Test target_changed_event coordination between operations
-      - [ ] Test async task creation for converge_position doesn't block commands
-    - [ ] **test_error_handling.py** - Error and edge case handling testing
-      - [ ] Test handling of unavailable/unknown underlying cover states
-      - [ ] Test missing source entity scenarios
-      - [ ] Test device_id safety when source entity has no device
-      - [ ] Test malformed source entity attributes (missing position/tilt)
-      - [ ] Test service call failures and retry exhaustion
-      - [ ] Test timeout scenarios in attribute waiting
-    - [ ] **test_state_synchronization.py** - State synchronization and reporting testing
-      - [ ] Test state reporting during movement (target values)
-      - [ ] Test state reporting when static (actual source values, remapped)
-      - [ ] Test async_write_ha_state calls at appropriate times
-      - [ ] Test last_position_command timestamp tracking for is_moving
-    - [ ] **test_configuration_access.py** - Configuration property access testing
-      - [ ] Test property access for config values: rename_pattern, rename_replacement
-      - [ ] Test property access for remapping ranges: min_pos, max_pos, min_tilt, max_tilt
-      - [ ] Test property access for behavior flags: close_tilt_if_down
-      - [ ] Test default value fallbacks when config missing
+    - [x] **test_service_calls.py** - Service call logic testing (_call_service) (19 tests)
+      - [x] Test throttling with asyncio_throttle.Throttler
+      - [x] Test allowed commands validation (set_cover_position, set_cover_tilt_position, stop_cover, stop_cover_tilt)
+      - [x] Test position confirmation with `_wait_for_attribute` when retry>0
+      - [x] Test tilt confirmation with `_wait_for_attribute` when retry>0
+      - [x] Test retry logic with abort_check function
+      - [x] Test exception handling and logging on service failures
+      - [x] Test `_last_position_command` timestamp tracking in service call context
+    - [x] **test_attribute_waiting.py** - Attribute waiting logic testing (_wait_for_attribute)
+      - [x] Test waits for underlying cover attribute to match target value
+      - [x] Test timeout behavior (default 30s)
+      - [x] Test early exit when target_changed_event is set
+      - [x] Test custom comparison function (default: abs(val-target)<=1)
+      - [x] Test state change listener and immediate state checking
+    - [x] **test_throttling_concurrency.py** - Throttling and concurrency testing
+      - [x] Test Throttler integration limits service call frequency
+      - [x] Test multiple converge_position calls: new targets interrupt previous runs
+      - [x] Test target_changed_event coordination between operations
+      - [x] Test async task creation for converge_position doesn't block commands
+    - [x] **test_error_handling.py** - Error and edge case handling testing (22 tests)
+      - [x] Test handling of unavailable/unknown underlying cover states
+      - [x] Test missing source entity scenarios
+      - [x] Test device_id safety when source entity has no device
+      - [x] Test malformed source entity attributes (missing position/tilt)
+      - [x] Test service call failures and retry exhaustion
+      - [x] Test timeout scenarios in attribute waiting
+    - [x] **test_state_synchronization.py** - State synchronization and reporting testing (12 tests)
+      - [x] Test state reporting during movement (target values)
+      - [x] Test state reporting when static (actual source values, remapped)
+      - [x] Test async_write_ha_state calls at appropriate times
+      - [x] Test last_position_command timestamp tracking for is_moving
+      - [x] Test position command timestamp updates through _call_service
+      - [x] Test tilt commands do NOT update movement timestamp (semantic change)
+      - [x] Test open/close commands set target values correctly
+      - [x] Test static state transitions with proper timestamp handling
+      - [x] Test full movement cycle with correct remapping calculations
+    - [x] **test_configuration_access.py** - Configuration property access testing (23 tests)
+      - [x] Test property access for config values: rename_pattern, rename_replacement
+      - [x] Test property access for remapping ranges: min_pos, max_pos, min_tilt, max_tilt
+      - [x] Test property access for behavior flags: close_tilt_if_down
+      - [x] Test default value fallbacks when config missing
+      - [x] Test type conversion for position/tilt values to int and boolean conversion
+      - [x] Test edge cases: boundary values, inverted ranges, equal ranges, empty patterns
 
-
-- [ ] **Documentation**
+- [ ] **Documentation & Polish**
   - [ ] Update `README.md` with configuration and usage instructions
   - [ ] Add examples for remapping scenarios
-
-- [ ] **Polish**
   - [ ] Code cleanup and comments
   - [ ] Add MIT License file
