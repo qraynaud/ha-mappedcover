@@ -2,12 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.0] - TBD
+## [0.4.4] - 2025-07-12
 ### Changed
 - Add test coverage.
 - If the current (tilt) position is below min, display it as 1 and not 0.
 - Fixes issues found thanks to the tests.
 - Fixes the cleanup that did not cancel timers properly
+- Change indentation size in .editorconfig from 2 to 4 spaces for consistency.
+- Add .coverage to .gitignore to prevent coverage files from being tracked.
+- Introduce LICENSE file with MIT License details.
+- Enhance README.md with a Table of Contents and improved license reference.
+- Update requirements-dev.txt to include pytest-check for better testing capabilities.
+- Remove outdated TODO.md file.
+- Introduce basic rules for code style in .cursor/rules/basic.mdc.
+- Add centralized test constants in tests/constants.py for better maintainability.
+- Refactor test fixtures and helpers for improved organization and clarity.
 
 ## [0.4.3] - 2025-06-01
 ### Changed

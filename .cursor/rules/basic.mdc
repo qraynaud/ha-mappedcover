@@ -1,5 +1,7 @@
 ---
-applyTo: '**'
+description:
+globs:
+alwaysApply: true
 ---
 Coding standards, domain knowledge, and preferences that AI should follow.
 Whenever writing code, please follow these guidelines:
@@ -14,3 +16,5 @@ Whenever writing code, please follow these guidelines:
 9. **Asynchronous code**: Prefer using async/await for asynchronous operations to keep the code readable and maintainable.
 10. **Documentation**: Write clear and concise documentation for your code, including how to use it and any dependencies it has. Update the README.md files as necessary.
 11. **Code duplication**: Avoid duplicating code. If you find yourself copying and pasting, consider creating a new function or module. Including in tests.
+12. **No dead code**: Remove any unused code, including commented-out sections. If a piece of code is not needed, it should not be in the codebase.
+13. **No unused symbols**: Remove any unused imports/variables/function/method to keep the code clean and improve performance.

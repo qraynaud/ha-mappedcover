@@ -1,0 +1,6 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+Please refer to the tests/*.md files for specific instructions. Always read them before making changes.
